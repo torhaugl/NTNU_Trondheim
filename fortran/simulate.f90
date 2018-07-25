@@ -2,12 +2,12 @@ module input
 implicit none
 
 ! Input file / Parameters
-real*8, parameter :: dt = 0.05/60.0 !time step (min)
-real*8, parameter :: final_time = 1*60 !minutes
+real, parameter :: dt = 0.07/60.0 !time step (min)
+real, parameter :: final_time = 1.0*60.0 !minutes
 integer, parameter :: NumTrials = final_time / dt
-real*8, parameter :: c_bulk = 0.2 ! Concentration bulk substrate
-real*8, parameter :: v_width = 17.0 !Voxel length
-real*8, parameter :: diffusion_s = 40680.0 !Diffusion substrate
+real, parameter :: c_bulk = 0.2 ! Concentration bulk substrate
+real, parameter :: v_width = 17.0 !Voxel length
+real, parameter :: diff_s = 40680.0, diff_q = 33300.0 !Diffusion substrate/QSM
 integer, parameter :: v_size(3) = (/10,10,100/)
 integer, parameter :: v_count = v_size(1) * v_size(2) * v_size(3)
 end
@@ -19,21 +19,25 @@ implicit none
 
 ! Variables
 !Concentration substrate (before and after timestep)
-real*8, dimension(v_count, 2) :: c_s
-integer :: pos(3) !xyz position
+real, dimension(v_count, 2) :: c_s, c_q
+real :: prod_s, prod_q
+integer :: pos(3) !xyz position&
+
 
 ! Loops
 integer :: i, n ! Standard indexes for loop
 integer :: i_list_neigh(6) !Index for neighbours of a voxel
-real*8 :: start, finish
+real :: start, finish
 
 
 
 
 ! Initialize array
 c_s(:,:) = c_bulk
-c_s(:9,:) = 0.02
+call xyz2index((/5,5,50/), i)
+c_s(i,:) = 0.8*v_count
 
+c_q(:,:) = 0.0
 
 !!! CODE
 print*,"CODE START"
@@ -43,18 +47,21 @@ call cpu_time(start)
 do n = 1, NumTrials
 
    do i = 1, v_count
-      call update_concentration(i, c_s)
+      call update_concentration(i, prod_s, diff_s, c_s) !Substrate
+      call update_concentration(i, prod_q, diff_q, c_q) !QSM
    end do
    c_s(:,1) = c_s(:,2) ! Insert the newly calculated concentrations
-
+   c_q(:,1) = c_q(:,2)
 end do
 call cpu_time(finish)
 
-print*,"CPU time:", finish-start
+print*,"CPU time(s):", finish-start
+print*,"Model time(min):", final_time
 
 print*,c_s(20,1)
 print*,c_s(10,1)
 print*,c_s(1,1)
+print*,sum(c_s(:,1))
 
 end program simulate
 
@@ -67,20 +74,21 @@ end program simulate
 
 
 
-subroutine update_concentration(i, c_s)
+subroutine update_concentration(i, prod, diff, c)
    ! Updates conentration
    ! Input index, diffusion constant, vortex width, c before/after
    ! Output new concentration
    use input
    implicit none
    integer, intent(in) :: i
-   real*8, dimension(v_count,2) :: c_s
+   real, dimension(v_count,2), intent(out) :: c
+   real, intent(in) :: prod, diff
    integer :: j_list_neigh(6), j
    
    call get_index_neighbours(i, j_list_neigh)
-   do j = 1,6
+   do j = 1,6 !For every neighbour
       if (.NOT. (j_list_neigh(j)  < 1 ) ) then
-         c_s(i,2) = c_s(i,2) + dt *(c_s(j_list_neigh(j),1) - c_s(i,1))*  diffusion_s/(v_width*v_width)
+         c(i,2) = c(i,2) + dt * (c(j_list_neigh(j),1) - c(i,1)) *  diff/(v_width*v_width)
       end if
    end do
 
