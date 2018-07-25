@@ -140,6 +140,15 @@ subroutine update_production_q(i, c_q, biomass, up, prod_q)
    prod_q(i) = Zqd*count_down + Zqu*count_up * c_q(i,1)/(Kq + c_q(i,1) )
 end
 
+subroutine probability_down2up(c_q, prob)
+   ! Calculates probability down to up
+   ! TODO
+   use input
+   implicit none
+
+   prob = 0
+end
+
 subroutine update_production_s(i, c_s, biomass, prod_s)
    ! Calculate the new production of substrate and QSM
    ! in voxel i
