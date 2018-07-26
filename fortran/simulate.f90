@@ -27,8 +27,12 @@ module input
    real, parameter :: Mmax = 14700.0
    integer, parameter :: Nmax = floor(density_cell * max_vol_frac * v_width**3 / Mmax) ! Standard input: 50
 
-end
+   real, parameter :: alpha = 1.33
+   real, parameter :: beta = 10
+   real, parameter :: gamma = 0.1
 
+   real, parameter :: eps_mass = avg_mass_cell
+end
 
 program simulate
 
@@ -98,6 +102,8 @@ program simulate
 
 end program simulate
 
+
+
 real function avg(arr)
    ! Must be length v_count
    use input
@@ -105,6 +111,36 @@ real function avg(arr)
    real, intent(in) :: arr(v_count)
    avg = sum(arr) / size(arr)
    return
+end
+
+
+subroutine update_eps(i, biomass, eps_amount, up, eps_count)
+   ! Calculate new eps. Create particle if eps > eps_mass
+   ! TODO Check total particle count (Pressure?)
+   use input !v_count Nmax Zed Zeu eps_mass
+   implicit none
+
+   integer, save :: count(v_count)
+   integer, intent(in) :: i
+   real, dimension(Nmax, v_count,2), intent(in)  :: biomass
+   real, dimension(v_count,2), intent(out) :: eps_amount
+   integer :: count_up, count_down
+
+   call mass2cell_count(biomass(:,i,1)*up(i,1)     , count_up)
+   call mass2cell_count(biomass(:,i,1)*(1-up(i,1)) , count_down)
+
+   eps_amount(i,2) = eps_amount(i,1) + Zed*count_down + Zeu*count_up
+
+   if (eps_amount(i,2) >= eps_mass)
+      eps_amount(i,2) = eps_amount(i,2) - eps_mass
+      eps_count = eps_count + 1
+
+      if (eps_count > Nmax)
+         print*, "EPS count too high", i, eps_count
+      end if
+   end if
+
+
 end
 
 
@@ -119,6 +155,7 @@ subroutine update_mass(i, c_s, biomass)
    biomass(:,i,2) = biomass(:,i,1) &
       + dt*Ymax* ( c_s(i,2)/(Ks + c_s(i,2) ) - maintenance)*biomass(:,i,1)
 end
+
 
 subroutine update_production_q(i, c_q, biomass, up, prod_q)
    ! Output the production of QSM in voxel i
@@ -140,13 +177,26 @@ subroutine update_production_q(i, c_q, biomass, up, prod_q)
    prod_q(i) = Zqd*count_down + Zqu*count_up * c_q(i,1)/(Kq + c_q(i,1) )
 end
 
-subroutine probability_down2up(c_q, prob)
+subroutine probability_down2up(i, c_q, prob)
    ! Calculates probability down to up
-   ! TODO
-   use input
+   use input !v_count, alpha, gamma
    implicit none
+   integer, intent(in) :: i
+   real, intent(in) :: c_q(v_count,2)
+   real, intent(out) :: prob
 
-   prob = 0
+   prob = alpha*c_q(i,2) / (1 + gamma *c_q(i,2))
+end
+
+subroutine probability_up2down(i, c_q, prob)
+   ! Calculates probability down to up
+   use input !v_count, alpha, gamma
+   implicit none
+   integer, intent(in) :: i
+   real, intent(in) :: c_q(v_count,2)
+   real, intent(out) :: prob
+
+   prob = beta / (1 + gamma *c_q(i,2))
 end
 
 subroutine update_production_s(i, c_s, biomass, prod_s)
@@ -163,6 +213,7 @@ subroutine update_production_s(i, c_s, biomass, prod_s)
    M = sum(biomass(:,i,1))
    prod_s(i) = - Vmax* M * c_s(i,1) / (Ks + c_s(i,1))
 end
+
 
 subroutine update_concentration(i, prod, diff, c)
    ! Updates conentration (Forward Euler step)
@@ -183,7 +234,9 @@ subroutine update_concentration(i, prod, diff, c)
    end do
 end
 
+
 subroutine append_biomass(mass, i, biomass)
+   ! TODO check total particle count
    use input !Nmax
    implicit none
 
@@ -192,9 +245,14 @@ subroutine append_biomass(mass, i, biomass)
    real, intent(in) :: mass
    real, intent(out) :: biomass(Nmax,v_count,2)
 
-   biomass(current(i), i, 2) = mass
-   current(i) = current(i) + 1
+   if (current(i) <= Nmax) then
+      biomass(current(i), i, 2) = mass
+      current(i) = current(i) + 1
+   else
+      print*, "Overfilled vortex biomass", i, current(i)
+   end if
 end
+
 
 subroutine index2xyz(i, pos)
    ! Input index i
@@ -211,6 +269,7 @@ subroutine index2xyz(i, pos)
 
    pos = (/x, y, z/)
 end
+
 
 subroutine xyz2index(pos, i)
    ! Input xyz in pos list
@@ -231,6 +290,7 @@ subroutine xyz2index(pos, i)
       i = 0
    end if
 end
+
 
 subroutine get_index_neighbours(i, i_list_neigh)
    ! Input index
@@ -274,6 +334,7 @@ subroutine get_index_neighbours(i, i_list_neigh)
    end if
 end
 
+
 subroutine continuous_boundary_condition(pos_q, v_size_q)
    ! Input position in one direction with vortex size,
    ! Returns new position according to CBC
@@ -286,6 +347,7 @@ subroutine continuous_boundary_condition(pos_q, v_size_q)
       pos_q = 0
    end if
 end
+
 
 subroutine mass2cell_count(mass, count)
    use input
