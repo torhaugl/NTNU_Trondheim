@@ -38,10 +38,10 @@ program simulate
    real, external :: avg
 
    ! Variables
-   integer, dimension(v_count,2) :: eps_count
-   real, dimension(v_count, 2) :: c_s, c_q, up, eps_amount
-   real, dimension(Nmax, v_count, 2) :: biomass
-   real, dimension(v_count) :: prod_s, prod_q
+   real,    dimension(v_count)         :: prod_s, prod_q
+   integer, dimension(v_count,2)       :: eps_count
+   real,    dimension(v_count,2)       :: c_s, c_q, up, eps_amount, pressure
+   real,    dimension(Nmax,v_count,2)  :: biomass
    integer :: pos(3) !xyz position
 
    ! Loops
@@ -56,6 +56,7 @@ program simulate
    biomass(:,:,:) = 0.0
    eps_count(:,:) = 0
    eps_amount(:,:) = 0.0
+   pressure(:,:) = 0
 
 
    do i = 1, v_size(1)*v_size(2)
@@ -77,9 +78,12 @@ program simulate
          call update_eps(i, biomass, up, eps_amount, eps_count)
          call update_mass(i, c_s, biomass)
          call update_stochastics(i,c_q,biomass,up)
-
-         call update_production_s(i, c_s, biomass, prod_s) !Substrate
+         call update_pressure(i, biomass, eps_count, pressure)
+         call update_displacement(i, pressure, biomass, eps_amount, eps_count)
+         call update_production_s(i, c_s, biomass, prod_s)
          call update_production_q(i, c_q, biomass, up, prod_q)
+         ! Remove above out of voxel loop
+
          call update_concentration(i, prod_s, diff_s, c_s) !Substrate
          call update_concentration(i, prod_q, diff_q, c_q) !QSM
       end do
@@ -113,6 +117,56 @@ end program simulate
 
 
 
+subroutine update_pressure(i, biomass, eps_count, pressure)
+   use input
+   implicit none
+
+   integer, intent(in) :: i, eps_count(v_count,2)
+   real, intent(in) :: biomass(Nmax,v_count,2)
+   real, intent(out) :: pressure(v_count,2)
+   integer :: count
+
+   call get_count_particles(biomass(:,i,1), eps_count(i,1), count)
+   if (count == Nmax) then
+      pressure(i,2) = 1.0
+   else 
+      pressure(i,2) = count / (Nmax - count)
+   end if
+
+   if (pressure(i,2) > 1) print*, "Pressure > 1"
+end
+
+subroutine update_displacement(i, pressure, biomass, eps_amount, eps_count)
+   use input
+   implicit none
+
+   integer, intent(in) :: i
+   real, intent(in) :: pressure(v_count,2)
+   integer, intent(out) :: eps_count(v_count,2)
+   real, intent(out) :: biomass(Nmax,v_count,2), eps_amount(v_count,2)
+
+   integer :: j,k, j_list_neigh(6), particle_transfer, count, count_neigh
+
+
+   call get_count_particles(biomass(:,i,1), eps_count(i,1), count)
+   call get_index_neighbours(i, j_list_neigh)
+
+   particle_transfer = 0
+   do j =1,6
+      k = j_list_neigh(j)
+      if (.NOT. k == 0) then
+         call get_count_particles(biomass(:,k,1), eps_count(k,1), count_neigh)
+         particle_transfer = particle_transfer + floor(mu * (pressure(i,1) - pressure(k,1)) *(count - count_neigh) )
+      end if
+   end do
+
+   if (particle_transfer < 0) print*, "Error, particle_transfer<0", particle_transfer
+   if (particle_transfer > 0) print*, "Particle transfer", particle_transfer
+
+
+
+end
+
 real function avg(arr)
    ! Must be length v_count
    use input
@@ -121,7 +175,6 @@ real function avg(arr)
    avg = sum(arr) / size(arr)
    return
 end
-
 
 subroutine update_eps(i, biomass, up, eps_amount, eps_count)
    ! Calculate new eps. Create particle if eps > eps_mass
@@ -150,7 +203,6 @@ subroutine update_eps(i, biomass, up, eps_amount, eps_count)
    end if
 end
 
-
 subroutine update_mass(i, c_s, biomass)
    use input !v_count Nmax Ymax, Ks, Vmax, m, dt
    implicit none
@@ -162,7 +214,6 @@ subroutine update_mass(i, c_s, biomass)
    biomass(:,i,2) = biomass(:,i,1) &
       + dt*Ymax* ( c_s(i,2)/(Ks + c_s(i,2) ) - maintenance)*biomass(:,i,1)
 end
-
 
 subroutine update_production_q(i, c_q, biomass, up, prod_q)
    ! Output the production of QSM in voxel i
@@ -300,7 +351,6 @@ subroutine update_production_s(i, c_s, biomass, prod_s)
    prod_s(i) = - Vmax* M * c_s(i,1) / (Ks + c_s(i,1))
 end
 
-
 subroutine update_concentration(i, prod, diff, c)
    ! Updates conentration (Forward Euler step)
    ! Input index, diffusion constant, voxel width, c before/after
@@ -320,7 +370,6 @@ subroutine update_concentration(i, prod, diff, c)
    end do
 end
 
-
 subroutine append_biomass(mass, i, biomass)
    ! TODO check total particle count
    use input !Nmax
@@ -339,7 +388,6 @@ subroutine append_biomass(mass, i, biomass)
    end if
 end
 
-
 subroutine index2xyz(i, pos)
    ! Input index i
    ! Returns x y z in pos list
@@ -355,7 +403,6 @@ subroutine index2xyz(i, pos)
 
    pos = (/x, y, z/)
 end
-
 
 subroutine xyz2index(pos, i)
    ! Input xyz in pos list
@@ -376,7 +423,6 @@ subroutine xyz2index(pos, i)
       i = 0
    end if
 end
-
 
 subroutine get_index_neighbours(i, i_list_neigh)
    ! Input index
@@ -420,7 +466,6 @@ subroutine get_index_neighbours(i, i_list_neigh)
    end if
 end
 
-
 subroutine continuous_boundary_condition(pos_q, v_size_q)
    ! Input position in one direction with voxel size,
    ! Returns new position according to CBC
@@ -434,7 +479,6 @@ subroutine continuous_boundary_condition(pos_q, v_size_q)
       pos_q = 0
    end if
 end
-
 
 subroutine mass2cell_count(mass, count)
    use input
