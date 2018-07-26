@@ -14,11 +14,11 @@ module input
    real, parameter :: Vmax = 46e-3 !Maximum substrate uptake
    real, parameter :: Ks = 2.34e-3 ! Half-saturaton const (substrate uptake)
 
-   real, parameter :: Zqd = 8.3, Zqu = 1230.0 !QSM production TODO Set values
-   real, parameter :: Kq = 1 ! TODO Set value
+   real, parameter :: Zqd = 8.3, Zqu = 1230.0 !QSM production 
+   real, parameter :: Kq = 10
 
-   real, parameter :: Ymax = 0.444 ! TODO Set value
-   real, parameter :: maintenance = 0.6e-3 !TODO Set value
+   real, parameter :: Ymax = 0.444 
+   real, parameter :: maintenance = 0.6e-3 
 
    real, parameter :: avg_mass_cell = 420.0
 
@@ -32,6 +32,9 @@ module input
    real, parameter :: gamma = 0.1
 
    real, parameter :: eps_mass = avg_mass_cell
+   real, parameter :: Zed = 0, Zeu = 1e-3
+
+   real, parameter :: mu = 1e-3 !Transfer coefficient
 end
 
 program simulate
@@ -114,7 +117,7 @@ real function avg(arr)
 end
 
 
-subroutine update_eps(i, biomass, eps_amount, up, eps_count)
+subroutine update_eps(i, biomass, up, eps_amount, eps_count)
    ! Calculate new eps. Create particle if eps > eps_mass
    ! TODO Check total particle count (Pressure?)
    use input !v_count Nmax Zed Zeu eps_mass
@@ -124,10 +127,11 @@ subroutine update_eps(i, biomass, eps_amount, up, eps_count)
    integer, intent(in) :: i
    real, dimension(Nmax, v_count,2), intent(in)  :: biomass
    real, dimension(v_count,2), intent(out) :: eps_amount
+   integer, intent(out) :: eps_count
    integer :: count_up, count_down
 
-   call mass2cell_count(biomass(:,i,1)*up(i,1)     , count_up)
-   call mass2cell_count(biomass(:,i,1)*(1-up(i,1)) , count_down)
+   call get_count_up(i,biomass,up,count_up)
+   call get_count_down(i,biomass,up,count_down)
 
    eps_amount(i,2) = eps_amount(i,1) + Zed*count_down + Zeu*count_up
 
@@ -139,8 +143,6 @@ subroutine update_eps(i, biomass, eps_amount, up, eps_count)
          print*, "EPS count too high", i, eps_count
       end if
    end if
-
-
 end
 
 
@@ -159,7 +161,6 @@ end
 
 subroutine update_production_q(i, c_q, biomass, up, prod_q)
    ! Output the production of QSM in voxel i
-
    use input !v_count,Nmax, Kq, Zqd, Zqu
    implicit none
 
@@ -167,14 +168,53 @@ subroutine update_production_q(i, c_q, biomass, up, prod_q)
    real, intent(in)     :: up(v_count,2), c_q(v_count,2)
    real, intent(in), dimension(Nmax,v_count,2) :: biomass
    real, intent(out)    :: prod_q(v_count)
-   real :: M=0 !Tot mass
    integer :: count_up, count_down
+
+   call get_count_up(i,biomass,up,count_up)
+   call get_count_down(i,biomass,up,count_down)
+
+   prod_q(i) = Zqd*count_down + Zqu*count_up * c_q(i,1)/(Kq + c_q(i,1) )
+end
+
+subroutine get_count_up(i,biomass,up,count_up)
+   ! TODO Worth it?
+   use input
+   implicit none
+
+   real, intent(in) :: biomass(Nmax,v_count,2), up(v_count)
+   integer, intent(out) :: count_up
+   real :: M=0 !Tot mass in voxel
 
    M = sum(biomass(:,i,1) )
    call mass2cell_count(M*up(i,1), count_up)
-   call mass2cell_count(M*(1-up(i,1)), count_down)
+end
 
-   prod_q(i) = Zqd*count_down + Zqu*count_up * c_q(i,1)/(Kq + c_q(i,1) )
+subroutine get_count_down(i,biomass,up,count_down)
+   ! TODO Worth it?
+   use input
+   implicit none
+
+   real, intent(in) :: biomass(Nmax,v_count,2), up(v_count)
+   integer, intent(out) :: count_down
+   real :: M=0 !Tot mass in voxel
+
+   M = sum(biomass(:,i,1) )
+   call mass2cell_count(M*(1-up(i,1)), count_up)
+end
+
+subroutine get_count_particles(biomass_particle,eps_count, count)
+   ! TODO Worth it?
+   use input
+   implicit none
+
+   integer, intent(in)  :: eps_count(v_count)
+   real,    intent(in)  :: biomass_particle(Nmax)
+   integer, intent(out) :: count
+   real :: M=0
+   M = sum(biomass_particle(:))
+
+   call mass2cell_count(M,count)
+   count = count + eps_count
 end
 
 subroutine probability_down2up(i, c_q, prob)
