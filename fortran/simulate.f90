@@ -3,7 +3,7 @@ module input
 
    ! Input file / Parameters
    real,    parameter :: dt = 0.07/60.0 !time step (min)
-   real,    parameter :: final_time = 1*60.0 !minutes
+   real,    parameter :: final_time = 0.5*60.0 !minutes
    integer, parameter :: NumTrials = final_time / dt
    real,    parameter :: c_bulk = 0.2 ! Concentration bulk substrate
    real,    parameter :: v_width = 17.0 !Voxel length
@@ -133,7 +133,7 @@ subroutine update_pressure(i, biomass, eps_count, pressure)
       pressure(i,2) = count / (Nmax - count)
    end if
 
-   if (pressure(i,2) > 1) print*, "Pressure > 1"
+   !if (pressure(i,2) > 1) print*, "Pressure > 1"
 end
 
 subroutine update_displacement(i, pressure, biomass, eps_amount, eps_count)
@@ -240,10 +240,12 @@ subroutine get_count_up(i,biomass,up,count_up)
    integer, intent(in) :: i
    real, intent(in) :: biomass(Nmax,v_count,2), up(v_count,2)
    integer, intent(out) :: count_up
+   integer :: count
    real :: M=0 !Tot mass in voxel
 
    M = sum(biomass(:,i,1) )
-   call mass2cell_count(M*up(i,1), count_up)
+   call mass2cell_count(M, count)
+   count_up = nint(count * up(i,1))
 end
 
 subroutine get_count_down(i,biomass,up,count_down)
@@ -254,10 +256,12 @@ subroutine get_count_down(i,biomass,up,count_down)
    integer, intent(in) :: i
    real, intent(in) :: biomass(Nmax,v_count,2), up(v_count,2)
    integer, intent(out) :: count_down
+   integer :: count
    real :: M=0 !Tot mass in voxel
 
    M = sum(biomass(:,i,1) )
-   call mass2cell_count(M*(1-up(i,1)), count_down)
+   call mass2cell_count(M, count)
+   count_down = nint(count * (1-up(i,1)))
 end
 
 subroutine get_count_particles(biomass_particle,eps_count_particle, count)
