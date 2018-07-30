@@ -154,6 +154,15 @@ program simulate
       eps_amount(:,1) = eps_amount(:,2)
       up(:,:,1) = up(:,:,2)
       pressure(:,1) = pressure(:,2)
+
+      ! bulk
+      c_s(9900:10000,:) = c_bulk
+      c_q(9900:10000,:) = 0
+      biomass(:,9900,:) = 0
+      eps_count(9900:10000,:) = 0
+      eps_amount(9900:10000,:) = 0
+      up(:,9900:10000,:) = 0
+      pressure(9900:10000,:) = 0
    end do
 
    call cpu_time(finish)
@@ -201,7 +210,6 @@ end
 
 subroutine update_displacement(i, pressure, biomass, eps_count, up)
    ! Depends on neighbours
-   ! Slowest function (~6x as slow)
    use input
    implicit none
 
@@ -216,11 +224,13 @@ subroutine update_displacement(i, pressure, biomass, eps_count, up)
 
 
    call get_count_particles(biomass(:,i,1), eps_count(i,1), count)
+   if (mu*pressure(i,1)*count < 1 ) return ! Save lots of time 
 
    ! Calculate how many particles are displaced
 
    count_displaced = 0
    call get_index_neighbours(i, j_list_neigh)
+
    if (count < Nmax) then !Update transfer depending on neighbours
       do j =1,6
          k = j_list_neigh(j)
