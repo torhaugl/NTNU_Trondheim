@@ -2,9 +2,9 @@ module input
    implicit none
 
    ! Input file / Parameters
-   real,    parameter :: dt = 0.07/60.0 !time step (min)
+   real,    parameter :: dt = 0.05/60.0 !time step (min)
    real,    parameter :: final_time = 0.5*60.0 !minutes
-   integer, parameter :: NumTrials = final_time / dt
+   integer, parameter :: NumTrials = floor(final_time / dt)
    real,    parameter :: c_bulk = 0.2 ! Concentration bulk substrate
    real,    parameter :: v_width = 17.0 !Voxel length
    real,    parameter :: diff_s = 40680.0, diff_q = 33300.0 !Diffusion subst./QSM
@@ -44,11 +44,9 @@ program simulate
    integer, dimension(v_count,2)       :: eps_count
    real,    dimension(v_count,2)       :: c_s, c_q, eps_amount, pressure
    real,    dimension(Nmax,v_count,2)  :: biomass,up
-   integer :: pos(3) !xyz position
 
    ! Loops
    integer :: i, n ! Standard indexes for loop
-   integer :: i_list_neigh(6) !Index for neighbours of a voxel
    real :: start, finish, start_update, finish_update, r, timer(9)
    timer(:) = 0.0
 
@@ -83,6 +81,8 @@ program simulate
    !  5 update_displacement
    !  7 update_production_q
    do n = 1,NumTrials
+      if (mod(n,floor(NumTrials/100.0)) == 0) print*, floor((real(n)/real(NumTrials)*100.0))
+
       call cpu_time(start_update)
       do i = 1, v_count
          call update_eps(i, biomass, up, eps_amount, eps_count)
@@ -113,7 +113,7 @@ program simulate
 
       call cpu_time(start_update)
       do i = 1, v_count
-         call update_displacement(i, pressure, biomass, eps_amount, eps_count,up)
+         call update_displacement(i, pressure, biomass, eps_count,up)
       enddo
       call cpu_time(finish_update)
       timer(5) = (finish_update - start_update) + timer(5)
@@ -153,6 +153,7 @@ program simulate
       eps_count(:,1) = eps_count(:,2)
       eps_amount(:,1) = eps_amount(:,2)
       up(:,:,1) = up(:,:,2)
+      pressure(:,1) = pressure(:,2)
    end do
 
    call cpu_time(finish)
@@ -189,25 +190,27 @@ subroutine update_pressure(i, biomass, eps_count, pressure)
    integer :: count
 
    call get_count_particles(biomass(:,i,1), eps_count(i,1), count)
+
    if (count >= Nmax) then
-      pressure(i,2) = 1.0
+      pressure(i,2) = real(Nmax)
    else 
-      pressure(i,2) = count / (Nmax - count)
+      pressure(i,2) = real(count) / (real(Nmax) - real(count))
    end if
 
-   if (pressure(i,2) > 1) print*, "Pressure > 1", count
 end
 
-subroutine update_displacement(i, pressure, biomass, eps_amount, eps_count, up)
+subroutine update_displacement(i, pressure, biomass, eps_count, up)
+   ! Depends on neighbours
+   ! Slowest function (~6x as slow)
    use input
    implicit none
 
    integer, intent(in) :: i
    real, intent(in) :: pressure(v_count,2)
    integer, intent(out) :: eps_count(v_count,2)
-   real, intent(out) :: biomass(Nmax,v_count,2), up(Nmax,v_count,2), eps_amount(v_count,2)
+   real, intent(out) :: biomass(Nmax,v_count,2), up(Nmax,v_count,2)
 
-   integer :: j,k, j_list_neigh(6), particle_transfer, count, count_neigh, chosen, rand_int, count_displaced
+   integer :: j,k, j_list_neigh(6), count, count_neigh, chosen, rand_int, count_displaced
    real :: up_temp,mass,tot_pressure, rand, P(6) ! Cumulative probability
    logical :: eps_displaced
 
@@ -217,76 +220,82 @@ subroutine update_displacement(i, pressure, biomass, eps_amount, eps_count, up)
    ! Calculate how many particles are displaced
 
    count_displaced = 0
+   call get_index_neighbours(i, j_list_neigh)
    if (count < Nmax) then !Update transfer depending on neighbours
-      call get_index_neighbours(i, j_list_neigh)
       do j =1,6
          k = j_list_neigh(j)
-         if (.NOT. k == 0) then
-            call get_count_particles(biomass(:,k,1), eps_count(k,1), count_neigh)
+         if (k < 1) cycle
+         call get_count_particles(biomass(:,k,1), eps_count(k,1), count_neigh)
+         if (pressure(i,1) > pressure(k,1) .AND. count > count_neigh) then
             count_displaced = count_displaced + floor(mu * (pressure(i,1) - pressure(k,1)) *(count - count_neigh) )
-         end if
+         endif
       end do
-
-   else !count >= Nmax, irrelevant of neighbours
+   else if (count >= Nmax) then ! Irrelevant of neighbours
       count_displaced = count - Nmax
    end if
-   if (count_displaced > 10) print*, "DEBUG",eps_count(k,1),count_neigh
 
    if (count_displaced < 0) print*, "Error, particle_transfer<0", count_displaced
-   if (count_displaced > 0) print*, "Particle transfer", count_displaced
 
 
    ! If paritcles are displaced
    if (count_displaced > 0) then
-
       ! Calculate probability for each neighbour
       tot_pressure = 0
       do j =1,6
-         if (pressure(i,1) > pressure(j,1) .AND. .NOT. j == 0 ) then
-            tot_pressure = tot_pressure + pressure(j,1)
+         k = j_list_neigh(j)
+         if (k < 1) cycle
+         if (pressure(i,1) > pressure(k,1)) then
+            tot_pressure = tot_pressure + (pressure(i,1) - pressure(k,1))
          end if
       end do
+
       
       do j =1,6
          k = j_list_neigh(j)
-   
-         if (pressure(i,1) > pressure(j,1)) then
-            P(j) = (pressure(i,1) - pressure(j,1)) / tot_pressure
+         if (pressure(i,1) > pressure(k,1) .AND. k > 0) then
+            P(j) = (pressure(i,1) - pressure(k,1)) / tot_pressure
          else
             P(j) = 0
          end if
    
-         if (.NOT. j == 1) then ! Cumulative sum
+         if (j > 1) then ! Cumulative sum
             P(j) = P(j-1) + P(j)
          end if
       end do
-      print*, P
+
+      if (all(P == 0.0)) then
+         count_displaced = 0
+         print*, "Voxel overloaded", i
+         return
+      endif
 
       ! Calculate which neighbour(index) and particle is chosen
       ! neighbour
-      call random_number(rand)
-      do j =1,6
-         if ( rand < P(j) ) then
-            chosen = j_list_neigh(j)
-            exit
+      do while (count_displaced > 0)
+         call random_number(rand)
+         do j =1,6
+            if ( rand < P(j) ) then
+               chosen = j_list_neigh(j)
+               exit
+            endif
+         enddo
+   
+         ! Choose particle type
+         call random_number(rand)
+         rand_int = 1 + floor(count * rand) ! 1 - count
+         eps_displaced = (rand_int <= eps_count(i,1))
+   
+         ! Remove and Append particles to neighbour
+         if (eps_displaced) then
+            eps_count(i,2) = eps_count(i,2) - 1 
+            eps_count(chosen,2) = eps_count(chosen,2) + 1
+         else !biomass displaced
+            call biomass_remove_random(i,biomass,mass,up,up_temp)
+            call biomass_append(chosen,mass,up_temp,biomass,up)
          endif
+         count_displaced = count_displaced - 1
       enddo
-
-      ! Choose particle type
-      call random_number(rand)
-      rand_int = 1 + floor(count * rand) ! 1 - count
-      eps_displaced = (rand_int <= eps_count(i,1))
-
-      ! Remove and Append particles to neighbour
-      if (eps_displaced) then
-         eps_count(i,2) = eps_count(i,2) - 1 
-         eps_count(chosen,2) = eps_count(chosen,2) + 1
-      else !biomass displaced
-         call biomass_remove_random(i,biomass,mass,up,up_temp)
-         call biomass_append(chosen,mass,up_temp,biomass,up)
-      endif
-
-   end if
+   endif
 end
 
 real function avg(arr)
@@ -313,11 +322,11 @@ subroutine update_eps(i, biomass, up, eps_amount, eps_count)
    call get_count_up(i,biomass,up,count_up)
    call get_count_down(i,biomass,up,count_down)
 
-   eps_amount(i,2) = eps_amount(i,1) + Zed*count_down + Zeu*count_up
+   eps_amount(i,2) = eps_amount(i,2) + Zed*count_down + Zeu*count_up
 
    if (eps_amount(i,2) >= eps_mass) then
       eps_amount(i,2) = eps_amount(i,2) - eps_mass
-      eps_count(i,2) = eps_count(i,1) + 1
+      eps_count(i,2) = eps_count(i,2) + 1
 
       if (eps_count(i,2) > Nmax) then
          print*, "EPS count too high", i, eps_count(i,2)
@@ -365,12 +374,14 @@ subroutine get_count_up(i,biomass,up,count_up)
    integer :: count,j
    real :: M=0 !Tot mass in voxel
 
+   
+
    count_up = 0
-   do j=1,Nmax
-      M = biomass(j,i,1)
-      call mass2cell_count(M, count)
-      count_up = count_up + nint(count * up(j,i,1))
-   enddo
+   !do j=1,Nmax
+   !   M = biomass(j,i,1)
+   !   call mass2cell_count(M, count)
+   !   count_up = count_up + nint(count * up(j,i,1))
+   !enddo
 end
 
 subroutine get_count_down(i,biomass,up,count_down)
@@ -384,12 +395,13 @@ subroutine get_count_down(i,biomass,up,count_down)
    integer :: count,j
    real :: M=0 !Tot mass in voxel
 
-   count_down = 0
-   do j=1,Nmax
-      M = biomass(j,i,1)
-      call mass2cell_count(M, count)
-      count_down = count_down + nint(count * (1-up(j,i,1)))
-   enddo
+   M = sum(biomass(:,i,1))
+   call mass2cell_count(M,count_down)
+   !do j=1,Nmax
+   !   M = biomass(j,i,1)
+   !   call mass2cell_count(M, count)
+   !   count_down = count_down + nint(count * (1-up(j,i,1)))
+   !enddo
 end
 
 subroutine get_count_particles(biomass_particle,eps_count_particle, count)
@@ -416,13 +428,11 @@ subroutine get_count_nonzero(arr, n)
    integer, intent(out) :: n
    integer :: j
 
-   n = 0
-   do j=1,Nmax
-      if (.NOT. arr(j) == 0.0) n = n + 1
-   enddo
+   n = count(arr .NE. 0)
 end
 
 subroutine update_stochastics(i, c_q, biomass, up)
+   !TODO error due to up(j,i,1), j is not correct
    use input !v_count, dt
    implicit none
 
@@ -454,10 +464,10 @@ subroutine update_stochastics(i, c_q, biomass, up)
       end if
    end do
 
-   if (count_up > 0 .AND. up(j,i,1) > 0 ) then
-      up(j,i,2) = up(j,i,1) + (count_d2u-count_u2d) * up(j,i,1) / real(count_up)
+   if (count_up > 0) then
+      up(j,i,2) = 0!up(j,i,2) + (count_d2u-count_u2d) * up(j,i,2) / real(count_up)
    else if (count_down > 0) then
-      up(j,i,2) = (count_d2u - count_u2d) / real(count_down)
+      up(j,i,2) = 0!(count_d2u - count_u2d) / real(count_down)
    end if
 end
 
