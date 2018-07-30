@@ -20,7 +20,7 @@ module input
    real,    parameter :: density_cell = 290.0
    real,    parameter :: max_vol_frac = 0.52
    real,    parameter :: Mmax = 14700.0
-   integer, parameter :: Nmax = floor(density_cell * max_vol_frac * v_width**3 / Mmax) ! Standard input: 50
+   integer, parameter :: Nmax = floor(density_cell * max_vol_frac * v_width**3 / Mmax) !Standard input: 50
    real,    parameter :: alpha = 1.33
    real,    parameter :: beta = 10
    real,    parameter :: gamma = 0.1
@@ -31,6 +31,8 @@ end
 
 program simulate
    ! Simulates time-steps
+   ! TODO Check correct timesteps. Updating of values should
+   !      always refer to timestep 2
    use input
    implicit none
 
@@ -40,27 +42,29 @@ program simulate
    ! Variables
    real,    dimension(v_count)         :: prod_s, prod_q
    integer, dimension(v_count,2)       :: eps_count
-   real,    dimension(v_count,2)       :: c_s, c_q, up, eps_amount, pressure
-   real,    dimension(Nmax,v_count,2)  :: biomass
+   real,    dimension(v_count,2)       :: c_s, c_q, eps_amount, pressure
+   real,    dimension(Nmax,v_count,2)  :: biomass,up
    integer :: pos(3) !xyz position
 
    ! Loops
    integer :: i, n ! Standard indexes for loop
    integer :: i_list_neigh(6) !Index for neighbours of a voxel
-   real :: start, finish
+   real :: start, finish, start_update, finish_update, r, timer(9)
+   timer(:) = 0.0
 
    ! Initialize arrays
    c_s(:,:) = c_bulk
    c_q(:,:) = 0.0
-   up(:,:) = 0.0
+   up(:,:,:) = 0.0
    biomass(:,:,:) = 0.0
    eps_count(:,:) = 0
    eps_amount(:,:) = 0.0
-   pressure(:,:) = 0
+   pressure(:,:) = 0.0
 
 
    do i = 1, v_size(1)*v_size(2)
-      call append_biomass(600.0,i, biomass)
+      call random_number(r)
+      call biomass_append(i, 400.0 + r*400.0, 0.0, biomass, up)
       biomass(:,i,1) = biomass(:,i,2)
    end do
 
@@ -73,39 +77,96 @@ program simulate
 
    ! TODO Updates independent of neighbours (all except concentration)
    !      can be calculated outside voxel loop
+   ! TODO Slow parts: 
+   !  1 update_eps
+   !  3 update_stochastics
+   !  5 update_displacement
+   !  7 update_production_q
    do n = 1,NumTrials
+      call cpu_time(start_update)
       do i = 1, v_count
          call update_eps(i, biomass, up, eps_amount, eps_count)
-         call update_mass(i, c_s, biomass)
-         call update_stochastics(i,c_q,biomass,up)
-         call update_pressure(i, biomass, eps_count, pressure)
-         call update_displacement(i, pressure, biomass, eps_amount, eps_count)
-         call update_production_s(i, c_s, biomass, prod_s)
-         call update_production_q(i, c_q, biomass, up, prod_q)
-         ! Remove above out of voxel loop
+      enddo
+      call cpu_time(finish_update)
+      timer(1) = (finish_update - start_update) + timer(1)
 
+      call cpu_time(start_update)
+      do i = 1, v_count
+         call update_mass(i, c_s, biomass)
+      enddo
+      call cpu_time(finish_update)
+      timer(2) = (finish_update - start_update) + timer(2)
+
+      call cpu_time(start_update)
+      do i = 1, v_count
+         call update_stochastics(i,c_q,biomass,up)
+      enddo
+      call cpu_time(finish_update)
+      timer(3) = (finish_update - start_update) + timer(3)
+
+      call cpu_time(start_update)
+      do i = 1, v_count
+         call update_pressure(i, biomass, eps_count, pressure)
+      enddo
+      call cpu_time(finish_update)
+      timer(4) = (finish_update - start_update) + timer(4)
+
+      call cpu_time(start_update)
+      do i = 1, v_count
+         call update_displacement(i, pressure, biomass, eps_amount, eps_count,up)
+      enddo
+      call cpu_time(finish_update)
+      timer(5) = (finish_update - start_update) + timer(5)
+
+      call cpu_time(start_update)
+      do i = 1, v_count
+         call update_production_s(i, c_s, biomass, prod_s)
+      enddo
+      call cpu_time(finish_update)
+      timer(6) = (finish_update - start_update) + timer(6)
+
+      call cpu_time(start_update)
+      do i = 1, v_count
+         call update_production_q(i, c_q, biomass, up, prod_q)
+      enddo
+      call cpu_time(finish_update)
+      timer(7) = (finish_update - start_update) + timer(7)
+
+      call cpu_time(start_update)
+      do i = 1, v_count
          call update_concentration(i, prod_s, diff_s, c_s) !Substrate
+      enddo
+      call cpu_time(finish_update)
+      timer(8) = (finish_update - start_update) + timer(8)
+
+      call cpu_time(start_update)
+      do i = 1, v_count
          call update_concentration(i, prod_q, diff_q, c_q) !QSM
-      end do
+      enddo
+      call cpu_time(finish_update)
+      timer(9) = (finish_update - start_update) + timer(9)
+
+
       c_s(:,1) = c_s(:,2) ! Insert the newly calculated concentrations
       c_q(:,1) = c_q(:,2)
       biomass(:,:,1) = biomass(:,:,2)
       eps_count(:,1) = eps_count(:,2)
       eps_amount(:,1) = eps_amount(:,2)
-      up(:,1) = up(:,2)
+      up(:,:,1) = up(:,:,2)
    end do
 
    call cpu_time(finish)
 
    print*,"CPU time(s):", finish-start
    print*,"Model time(min):", final_time
+   print*, timer
    print*,
    print*,"Top"   ,c_s(10000,1)  ,c_q(10000,1)  ,eps_amount(10000,1)
    print*,"Mid"   ,c_s(5000,1)   ,c_q(5000,1)   ,eps_amount(5000,1)
    print*,"Bot"   ,c_s(1,1)      ,c_q(1,1)      ,eps_amount(1,1)
    print*,"AVG"   ,avg(c_s(:,1)) ,avg(c_q(:,1)) ,avg(eps_amount(:,1))
    print*,"Bio"   ,biomass(:4,1,1)
-   print*,"upp"   ,up(:4,1)
+   print*,"upp"   ,up(:4,1,1)
    call get_count_up(1,biomass,up,i)
    print*,"Up:"   ,i
    call get_count_down(1,biomass,up,i)
@@ -118,6 +179,7 @@ end program simulate
 
 
 subroutine update_pressure(i, biomass, eps_count, pressure)
+   ! If the number of particles is above max, pressure = 1
    use input
    implicit none
 
@@ -127,48 +189,108 @@ subroutine update_pressure(i, biomass, eps_count, pressure)
    integer :: count
 
    call get_count_particles(biomass(:,i,1), eps_count(i,1), count)
-   if (count == Nmax) then
+   if (count >= Nmax) then
       pressure(i,2) = 1.0
    else 
       pressure(i,2) = count / (Nmax - count)
    end if
 
-   !if (pressure(i,2) > 1) print*, "Pressure > 1"
+   if (pressure(i,2) > 1) print*, "Pressure > 1", count
 end
 
-subroutine update_displacement(i, pressure, biomass, eps_amount, eps_count)
+subroutine update_displacement(i, pressure, biomass, eps_amount, eps_count, up)
    use input
    implicit none
 
    integer, intent(in) :: i
    real, intent(in) :: pressure(v_count,2)
    integer, intent(out) :: eps_count(v_count,2)
-   real, intent(out) :: biomass(Nmax,v_count,2), eps_amount(v_count,2)
+   real, intent(out) :: biomass(Nmax,v_count,2), up(Nmax,v_count,2), eps_amount(v_count,2)
 
-   integer :: j,k, j_list_neigh(6), particle_transfer, count, count_neigh
+   integer :: j,k, j_list_neigh(6), particle_transfer, count, count_neigh, chosen, rand_int, count_displaced
+   real :: up_temp,mass,tot_pressure, rand, P(6) ! Cumulative probability
+   logical :: eps_displaced
 
 
    call get_count_particles(biomass(:,i,1), eps_count(i,1), count)
-   call get_index_neighbours(i, j_list_neigh)
 
-   particle_transfer = 0
-   do j =1,6
-      k = j_list_neigh(j)
-      if (.NOT. k == 0) then
-         call get_count_particles(biomass(:,k,1), eps_count(k,1), count_neigh)
-         particle_transfer = particle_transfer + floor(mu * (pressure(i,1) - pressure(k,1)) *(count - count_neigh) )
-      end if
-   end do
+   ! Calculate how many particles are displaced
 
-   if (particle_transfer < 0) print*, "Error, particle_transfer<0", particle_transfer
-   if (particle_transfer > 0) print*, "Particle transfer", particle_transfer
+   count_displaced = 0
+   if (count < Nmax) then !Update transfer depending on neighbours
+      call get_index_neighbours(i, j_list_neigh)
+      do j =1,6
+         k = j_list_neigh(j)
+         if (.NOT. k == 0) then
+            call get_count_particles(biomass(:,k,1), eps_count(k,1), count_neigh)
+            count_displaced = count_displaced + floor(mu * (pressure(i,1) - pressure(k,1)) *(count - count_neigh) )
+         end if
+      end do
+
+   else !count >= Nmax, irrelevant of neighbours
+      count_displaced = count - Nmax
+   end if
+   if (count_displaced > 10) print*, "DEBUG",eps_count(k,1),count_neigh
+
+   if (count_displaced < 0) print*, "Error, particle_transfer<0", count_displaced
+   if (count_displaced > 0) print*, "Particle transfer", count_displaced
 
 
+   ! If paritcles are displaced
+   if (count_displaced > 0) then
 
+      ! Calculate probability for each neighbour
+      tot_pressure = 0
+      do j =1,6
+         if (pressure(i,1) > pressure(j,1) .AND. .NOT. j == 0 ) then
+            tot_pressure = tot_pressure + pressure(j,1)
+         end if
+      end do
+      
+      do j =1,6
+         k = j_list_neigh(j)
+   
+         if (pressure(i,1) > pressure(j,1)) then
+            P(j) = (pressure(i,1) - pressure(j,1)) / tot_pressure
+         else
+            P(j) = 0
+         end if
+   
+         if (.NOT. j == 1) then ! Cumulative sum
+            P(j) = P(j-1) + P(j)
+         end if
+      end do
+      print*, P
+
+      ! Calculate which neighbour(index) and particle is chosen
+      ! neighbour
+      call random_number(rand)
+      do j =1,6
+         if ( rand < P(j) ) then
+            chosen = j_list_neigh(j)
+            exit
+         endif
+      enddo
+
+      ! Choose particle type
+      call random_number(rand)
+      rand_int = 1 + floor(count * rand) ! 1 - count
+      eps_displaced = (rand_int <= eps_count(i,1))
+
+      ! Remove and Append particles to neighbour
+      if (eps_displaced) then
+         eps_count(i,2) = eps_count(i,2) - 1 
+         eps_count(chosen,2) = eps_count(chosen,2) + 1
+      else !biomass displaced
+         call biomass_remove_random(i,biomass,mass,up,up_temp)
+         call biomass_append(chosen,mass,up_temp,biomass,up)
+      endif
+
+   end if
 end
 
 real function avg(arr)
-   ! Must be length v_count
+   ! Calculates the avg value of an array of v_count values
    use input
    implicit none
    real, intent(in) :: arr(v_count)
@@ -183,8 +305,8 @@ subroutine update_eps(i, biomass, up, eps_amount, eps_count)
    implicit none
 
    integer, intent(in) :: i
-   real, dimension(Nmax, v_count,2), intent(in)  :: biomass
-   real, dimension(v_count,2), intent(out) :: eps_amount, up
+   real, dimension(Nmax, v_count,2), intent(in)  :: biomass, up
+   real, dimension(v_count,2), intent(out) :: eps_amount
    integer, intent(out) :: eps_count(v_count,2)
    integer :: count_up, count_down
 
@@ -221,8 +343,8 @@ subroutine update_production_q(i, c_q, biomass, up, prod_q)
    implicit none
 
    integer, intent(in)  :: i
-   real, intent(in)     :: up(v_count,2), c_q(v_count,2)
-   real, intent(in), dimension(Nmax,v_count,2) :: biomass
+   real, intent(in)     :: c_q(v_count,2)
+   real, intent(in), dimension(Nmax,v_count,2) :: biomass, up
    real, intent(out)    :: prod_q(v_count)
    integer :: count_up, count_down
 
@@ -238,14 +360,17 @@ subroutine get_count_up(i,biomass,up,count_up)
    implicit none
 
    integer, intent(in) :: i
-   real, intent(in) :: biomass(Nmax,v_count,2), up(v_count,2)
+   real, intent(in) :: biomass(Nmax,v_count,2), up(Nmax,v_count,2)
    integer, intent(out) :: count_up
-   integer :: count
+   integer :: count,j
    real :: M=0 !Tot mass in voxel
 
-   M = sum(biomass(:,i,1) )
-   call mass2cell_count(M, count)
-   count_up = nint(count * up(i,1))
+   count_up = 0
+   do j=1,Nmax
+      M = biomass(j,i,1)
+      call mass2cell_count(M, count)
+      count_up = count_up + nint(count * up(j,i,1))
+   enddo
 end
 
 subroutine get_count_down(i,biomass,up,count_down)
@@ -254,29 +379,47 @@ subroutine get_count_down(i,biomass,up,count_down)
    implicit none
 
    integer, intent(in) :: i
-   real, intent(in) :: biomass(Nmax,v_count,2), up(v_count,2)
+   real, intent(in) :: biomass(Nmax,v_count,2), up(Nmax,v_count,2)
    integer, intent(out) :: count_down
-   integer :: count
+   integer :: count,j
    real :: M=0 !Tot mass in voxel
 
-   M = sum(biomass(:,i,1) )
-   call mass2cell_count(M, count)
-   count_down = nint(count * (1-up(i,1)))
+   count_down = 0
+   do j=1,Nmax
+      M = biomass(j,i,1)
+      call mass2cell_count(M, count)
+      count_down = count_down + nint(count * (1-up(j,i,1)))
+   enddo
 end
 
 subroutine get_count_particles(biomass_particle,eps_count_particle, count)
    ! TODO Worth it?
+   ! Particle count in voxel! Misused as count in particle
+   ! Nonzero entries in biomass_particle are a particle
    use input
    implicit none
 
    integer, intent(in)  :: eps_count_particle
    real,    intent(in)  :: biomass_particle(Nmax)
    integer, intent(out) :: count
-   real :: M=0
-   M = sum(biomass_particle(:))
 
-   call mass2cell_count(M,count)
+   call get_count_nonzero(biomass_particle, count)
    count = count + eps_count_particle
+end
+
+subroutine get_count_nonzero(arr, n)
+   ! Counts 
+   use input !Nmax
+   implicit none
+
+   real,    intent(in)  :: arr(Nmax)
+   integer, intent(out) :: n
+   integer :: j
+
+   n = 0
+   do j=1,Nmax
+      if (.NOT. arr(j) == 0.0) n = n + 1
+   enddo
 end
 
 subroutine update_stochastics(i, c_q, biomass, up)
@@ -285,7 +428,7 @@ subroutine update_stochastics(i, c_q, biomass, up)
 
    integer, intent(in)  :: i
    real,    intent(in)  :: c_q(v_count,2), biomass(Nmax,v_count,2)
-   real,    intent(out) :: up(v_count,2)
+   real,    intent(out) :: up(Nmax,v_count,2)
    real :: d2u, u2d, rand
    integer :: count_up, count_down, count_d2u, count_u2d,j
 
@@ -311,10 +454,10 @@ subroutine update_stochastics(i, c_q, biomass, up)
       end if
    end do
 
-   if (count_up > 0 .AND. up(i,1) > 0 ) then
-      up(i,2) = up(i,1) + (count_d2u-count_u2d) * up(i,1)/real(count_up)
+   if (count_up > 0 .AND. up(j,i,1) > 0 ) then
+      up(j,i,2) = up(j,i,1) + (count_d2u-count_u2d) * up(j,i,1) / real(count_up)
    else if (count_down > 0) then
-      up(i,2) = (count_d2u - count_u2d) / real(count_down)
+      up(j,i,2) = (count_d2u - count_u2d) / real(count_down)
    end if
 end
 
@@ -374,22 +517,61 @@ subroutine update_concentration(i, prod, diff, c)
    end do
 end
 
-subroutine append_biomass(mass, i, biomass)
+subroutine biomass_remove_random(i, biomass, mass, up, up_temp)
+   use input
+   implicit none
+
+   integer, intent(in) :: i
+   real, intent(out) :: biomass(Nmax, v_count, 2), up(Nmax,v_count,2)
+   real, intent(out) :: mass, up_temp
+   real :: rand
+   integer :: rand_int, count_nonzero, j, n
+
+   call get_count_nonzero(biomass(:,i,2), count_nonzero)
+   call random_number(rand)
+   rand_int = 1 + floor(count_nonzero * rand)
+
+   ! Only check nonzeo values. 'n' variable keeps count.
+   n = 1
+   do j=1,Nmax
+      if (biomass(j,i,2) == 0.0) cycle
+
+      if (rand_int == n) then
+         mass = biomass(j,i,2)
+         biomass(j,i,2) = 0.0
+
+         up_temp = up(j,i,2)
+         up(j,i,2) = 0.0
+         exit
+      else
+         n = n + 1
+      endif
+   enddo
+
+end
+
+subroutine biomass_append(i, mass,up_temp,biomass,up)
    ! TODO check total particle count
+   ! Append mass at first non-zero biomass
    use input !Nmax
    implicit none
 
-   integer, save, dimension(v_count) :: current=1 !Current index for voxel, to not overwrite data
    integer, intent(in) :: i
    real, intent(in) :: mass
-   real, intent(out) :: biomass(Nmax,v_count,2)
+   real, intent(out) :: biomass(Nmax,v_count,2), up(Nmax,v_count,2)
+   integer :: j
+   real :: up_temp
 
-   if (current(i) <= Nmax) then
-      biomass(current(i), i, 2) = mass
-      current(i) = current(i) + 1
-   else
-      print*, "Overfilled voxel biomass", i, current(i)
-   end if
+   do j = 1,Nmax
+      if (biomass(j,i,2) == 0.0) then
+         biomass(j,i,2) = mass
+         up(j,i,2) = up_temp
+         exit
+      endif
+
+      if (j == Nmax) print*, "Couldn't append!", biomass(:,i,2)
+   enddo
+
 end
 
 subroutine index2xyz(i, pos)
