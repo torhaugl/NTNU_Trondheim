@@ -44,7 +44,7 @@ program simulate
    integer, dimension(v_count,2)       :: eps_count
    real,    dimension(v_count,2)       :: c_s, c_q, eps_amount, pressure
    real,    dimension(Nmax,v_count,2)  :: biomass
-   real, dimension(Nmax,v_count,2)  :: up
+   integer, dimension(Nmax,v_count,2)  :: up
 
    ! Loops
    integer :: i, n ! Standard indexes for loop
@@ -64,7 +64,7 @@ program simulate
    ! Insert particles into biomass: 1-2 bacteria, 400-800 mass, inactive
    do i = 1, v_size(1)*v_size(2)
       call random_number(r)
-      call biomass_append(i, 400.0 + r*400.0, 0.0, biomass, up)
+      call biomass_append(i, 400.0 + r*400.0, 0, biomass, up)
       biomass(:,i,1) = biomass(:,i,2)
    end do
 
@@ -197,10 +197,11 @@ subroutine update_division(i, biomass, up)
    use input
    implicit none
    integer, intent(in) :: i
-   real, intent(out) :: biomass(Nmax,v_count,2), up(Nmax,v_count,2)
+   real, intent(out) :: biomass(Nmax,v_count,2)
+   integer, intent(out) ::up(Nmax,v_count,2)
    real :: randf
-   real :: newmass, newup
-   integer :: j, count
+   real :: newmass
+   integer :: j, count, newup
 
 
    do j = 1,Nmax
@@ -218,7 +219,7 @@ subroutine update_division(i, biomass, up)
          ! ...
 
          ! call biomass_append(....)
-         call biomass_append(i, newmass, 0.0, biomass, up)
+         call biomass_append(i, newmass, 0, biomass, up)
       endif
    enddo
 end
@@ -250,11 +251,11 @@ subroutine update_displacement(i, pressure, biomass, eps_count, up)
 
    integer, intent(in) :: i
    real, intent(in) :: pressure(v_count,2)
-   integer, intent(out) :: eps_count(v_count,2)
-   real, intent(out) :: biomass(Nmax,v_count,2), up(Nmax,v_count,2)
+   integer, intent(out) :: eps_count(v_count,2), up(Nmax,v_count,2)
+   real, intent(out) :: biomass(Nmax,v_count,2)
 
-   integer :: j,k, j_list_neigh(6), count, count_neigh, chosen, rand_int, count_displaced
-   real :: up_temp,mass,tot_pressure, rand, P(6) ! Cumulative probability
+   integer :: up_temp,j,k, j_list_neigh(6), count, count_neigh, chosen, rand_int, count_displaced
+   real :: mass,tot_pressure, rand, P(6) ! Cumulative probability
    logical :: eps_displaced
 
 
@@ -359,7 +360,8 @@ subroutine update_eps(i, biomass, up, eps_amount, eps_count)
    implicit none
 
    integer, intent(in) :: i
-   real, dimension(Nmax, v_count,2), intent(in)  :: biomass, up
+   real, dimension(Nmax, v_count,2), intent(in)  :: biomass
+   integer, dimension(Nmax,v_count,2),intent(in) :: up
    real, dimension(v_count,2), intent(out) :: eps_amount
    integer, intent(out) :: eps_count(v_count,2)
    integer :: count_up, count_down
@@ -398,7 +400,8 @@ subroutine update_production_q(i, c_q, biomass, up, prod_q)
 
    integer, intent(in)  :: i
    real, intent(in)     :: c_q(v_count,2)
-   real, intent(in), dimension(Nmax,v_count,2) :: biomass, up
+   real, intent(in), dimension(Nmax,v_count,2) :: biomass
+   integer, intent(in), dimension(Nmax,v_count,2) :: up
    real, intent(out)    :: prod_q(v_count)
    integer :: count_up, count_down
 
@@ -414,19 +417,12 @@ subroutine get_count_up(i,biomass,up,count_up)
    implicit none
 
    integer, intent(in) :: i
-   real, intent(in) :: biomass(Nmax,v_count,2), up(Nmax,v_count,2)
+   real, intent(in) :: biomass(Nmax,v_count,2)
+   integer, intent(in) :: up(Nmax,v_count,2)
    integer, intent(out) :: count_up
    integer :: count,j
-   real :: M=0 !Tot mass in voxel
 
-   
-
-   count_up = 0
-   !do j=1,Nmax
-   !   M = biomass(j,i,1)
-   !   call mass2cell_count(M, count)
-   !   count_up = count_up + nint(count * up(j,i,1))
-   !enddo
+   count_up = sum(up(:,i,1))
 end
 
 subroutine get_count_down(i,biomass,up,count_down)
@@ -435,18 +431,16 @@ subroutine get_count_down(i,biomass,up,count_down)
    implicit none
 
    integer, intent(in) :: i
-   real, intent(in) :: biomass(Nmax,v_count,2), up(Nmax,v_count,2)
+   real, intent(in) :: biomass(Nmax,v_count,2)
+   integer, intent(in) :: up(Nmax,v_count,2)
    integer, intent(out) :: count_down
    integer :: count,j
    real :: M=0 !Tot mass in voxel
 
    M = sum(biomass(:,i,1))
-   call mass2cell_count(M,count_down)
-   !do j=1,Nmax
-   !   M = biomass(j,i,1)
-   !   call mass2cell_count(M, count)
-   !   count_down = count_down + nint(count * (1-up(j,i,1)))
-   !enddo
+   call mass2cell_count(M,count)
+   count_down = count - sum(up(:,i,1))
+
 end
 
 subroutine get_count_particles(biomass_particle,eps_count_particle, count)
@@ -483,37 +477,38 @@ subroutine update_stochastics(i, c_q, biomass, up)
 
    integer, intent(in)  :: i
    real,    intent(in)  :: c_q(v_count,2), biomass(Nmax,v_count,2)
-   real,    intent(out) :: up(Nmax,v_count,2)
+   integer, intent(out) :: up(Nmax,v_count,2)
    real :: d2u, u2d, rand
-   integer :: count_up, count_down, count_d2u, count_u2d,j
+   integer :: count_up, count_down,count, count_d2u, count_u2d,n,j
 
-   call get_count_down(i,biomass,up,count_down)
-   call get_count_up(i,biomass,up,count_up)
-   call probability_down2up(i,c_q,d2u)
-   call probability_up2down(i,c_q,u2d)
+   do j=1,Nmax
+      count_up = up(j,i,1)
+      call mass2cell_count(biomass(j,i,1), count)
+      count_down = count - count_up
 
-   ! Down -> Up
-   count_d2u = 0
-   do j=1,count_down
-      call random_number(rand)
-      if (rand < dt * d2u) then
-         count_d2u = count_d2u + 1
-      end if
-   end do
-   ! Up -> Down
-   count_u2d = 0
-   do j=1,count_up
-      call random_number(rand)
-      if (rand < dt * u2d) then
-         count_u2d = count_u2d + 1
-      end if
-   end do
+      call probability_down2up(i,c_q,d2u)
+      call probability_up2down(i,c_q,u2d)
+   
+      ! Down -> Up
+      count_d2u = 0
+      do n=1,count_down
+         call random_number(rand)
+         if (rand < dt * d2u) then
+            count_d2u = count_d2u + 1
+         end if
+      end do
+      ! Up -> Down
+      count_u2d = 0
+      do n=1,count_up
+         call random_number(rand)
+         if (rand < dt * u2d) then
+            count_u2d = count_u2d + 1
+         end if
+      end do
+   
+      up(j,i,2) = up(j,i,2) + (count_d2u-count_u2d) 
+   enddo
 
-   if (count_up > 0) then
-      up(j,i,2) = 0!up(j,i,2) + (count_d2u-count_u2d) * up(j,i,2) / real(count_up)
-   else if (count_down > 0) then
-      up(j,i,2) = 0!(count_d2u - count_u2d) / real(count_down)
-   end if
 end
 
 subroutine probability_down2up(i, c_q, prob)
@@ -577,8 +572,10 @@ subroutine biomass_remove_random(i, biomass, mass, up, up_temp)
    implicit none
 
    integer, intent(in) :: i
-   real, intent(out) :: biomass(Nmax, v_count, 2), up(Nmax,v_count,2)
-   real, intent(out) :: mass, up_temp
+   real, intent(out) :: biomass(Nmax, v_count, 2)
+   integer, intent(out) :: up(Nmax,v_count,2)
+   real, intent(out) :: mass
+   integer, intent(out) :: up_temp
    real :: rand
    integer :: rand_int, count_nonzero, j, n
 
@@ -596,7 +593,7 @@ subroutine biomass_remove_random(i, biomass, mass, up, up_temp)
          biomass(j,i,2) = 0.0
 
          up_temp = up(j,i,2)
-         up(j,i,2) = 0.0
+         up(j,i,2) = 0
          exit
       else
          n = n + 1
@@ -613,9 +610,10 @@ subroutine biomass_append(i, mass,up_temp,biomass,up)
 
    integer, intent(in) :: i
    real, intent(in) :: mass
-   real, intent(out) :: biomass(Nmax,v_count,2), up(Nmax,v_count,2)
+   real, intent(out) :: biomass(Nmax,v_count,2)
+   integer, intent(out) :: up(Nmax,v_count,2)
    integer :: j
-   real :: up_temp
+   integer :: up_temp
 
    do j = 1,Nmax
       if (biomass(j,i,2) == 0.0) then
