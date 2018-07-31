@@ -3,7 +3,7 @@ module input
 
    ! Input file / Parameters
    real,    parameter :: dt = 0.05/60.0 !time step (min)
-   real,    parameter :: final_time = 0.5*60.0 !minutes
+   real,    parameter :: final_time = 0.1*60.0 !minutes
    integer, parameter :: NumTrials = floor(final_time / dt)
    real,    parameter :: c_bulk = 0.2 ! Concentration bulk substrate
    real,    parameter :: v_width = 17.0 !Voxel length
@@ -43,23 +43,25 @@ program simulate
    real,    dimension(v_count)         :: prod_s, prod_q
    integer, dimension(v_count,2)       :: eps_count
    real,    dimension(v_count,2)       :: c_s, c_q, eps_amount, pressure
-   real,    dimension(Nmax,v_count,2)  :: biomass,up
+   real,    dimension(Nmax,v_count,2)  :: biomass
+   real, dimension(Nmax,v_count,2)  :: up
 
    ! Loops
    integer :: i, n ! Standard indexes for loop
    real :: start, finish, start_update, finish_update, r, timer(9)
-   timer(:) = 0.0
+   character(10) :: time
 
    ! Initialize arrays
    c_s(:,:) = c_bulk
    c_q(:,:) = 0.0
-   up(:,:,:) = 0.0
+   up(:,:,:) = 0
    biomass(:,:,:) = 0.0
    eps_count(:,:) = 0
    eps_amount(:,:) = 0.0
    pressure(:,:) = 0.0
+   timer(:) = 0.0
 
-
+   ! Insert particles into biomass: 1-2 bacteria, 400-800 mass, inactive
    do i = 1, v_size(1)*v_size(2)
       call random_number(r)
       call biomass_append(i, 400.0 + r*400.0, 0.0, biomass, up)
@@ -68,6 +70,8 @@ program simulate
 
    !!! CODE
    print*,"CODE START"
+   call date_and_time(TIME=time)
+   print*,"Time:",time(1:4)
    print*,"Number of steps:", NumTrials
    print*,
 
@@ -76,10 +80,7 @@ program simulate
    ! TODO Updates independent of neighbours (all except concentration)
    !      can be calculated outside voxel loop
    ! TODO Slow parts: 
-   !  1 update_eps
-   !  3 update_stochastics
    !  5 update_displacement
-   !  7 update_production_q
    do n = 1,NumTrials
       if (mod(n,floor(NumTrials/100.0)) == 0) print*, floor((real(n)/real(NumTrials)*100.0))
 
@@ -93,6 +94,7 @@ program simulate
       call cpu_time(start_update)
       do i = 1, v_count
          call update_mass(i, c_s, biomass)
+         call update_division(i, biomass, up)
       enddo
       call cpu_time(finish_update)
       timer(2) = (finish_update - start_update) + timer(2)
@@ -157,16 +159,18 @@ program simulate
 
       ! bulk
       c_s(9900:10000,:) = c_bulk
-      c_q(9900:10000,:) = 0
-      biomass(:,9900,:) = 0
-      eps_count(9900:10000,:) = 0
-      eps_amount(9900:10000,:) = 0
-      up(:,9900:10000,:) = 0
-      pressure(9900:10000,:) = 0
+      c_q(9900:10000,:) = 0.0
+      biomass(:,9900,:) = 0.0
+      eps_count(9900:10000,:) = 0.0
+      eps_amount(9900:10000,:) = 0.0
+      up(:,9900:10000,:) = 0.0
+      pressure(9900:10000,:) = 0.0
    end do
 
    call cpu_time(finish)
 
+   call date_and_time(TIME=time)
+   print*,"Finish Time:",time(1:4)
    print*,"CPU time(s):", finish-start
    print*,"Model time(min):", final_time
    print*, timer
@@ -187,6 +191,37 @@ program simulate
 end program simulate
 
 
+
+subroutine update_division(i, biomass, up)
+   ! TODO Finish this
+   use input
+   implicit none
+   integer, intent(in) :: i
+   real, intent(out) :: biomass(Nmax,v_count,2), up(Nmax,v_count,2)
+   real :: randf
+   real :: newmass, newup
+   integer :: j, count
+
+
+   do j = 1,Nmax
+      if (biomass(j,i,1) > Mmax) then
+         call random_number(randf)
+         randf = 0.4 + 0.2*randf ! 0.4-0.6
+
+         ! Mass
+         newmass = randf * biomass(j,i,1)
+         biomass(j,i,1) = (1-randf) * biomass(j,i,1)
+
+
+         ! Up cells hypergeometric distribution
+         call mass2cell_count(biomass(j,i,1), count)
+         ! ...
+
+         ! call biomass_append(....)
+         call biomass_append(i, newmass, 0.0, biomass, up)
+      endif
+   enddo
+end
 
 subroutine update_pressure(i, biomass, eps_count, pressure)
    ! If the number of particles is above max, pressure = 1
