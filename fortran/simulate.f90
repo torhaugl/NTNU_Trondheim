@@ -2,8 +2,8 @@ module input
    implicit none
 
    ! Input file / Parameters
-   real,    parameter :: dt = 0.05/60.0 !time step (min)
-   real,    parameter :: final_time = 0.1*60.0 !minutes
+   real,    parameter :: dt = 0.02/60.0 !time step (min)
+   real,    parameter :: final_time = 0.2*60.0 !minutes
    integer, parameter :: NumTrials = floor(final_time / dt)
    real,    parameter :: c_bulk = 0.2 ! Concentration bulk substrate
    real,    parameter :: v_width = 17.0 !Voxel length
@@ -12,7 +12,7 @@ module input
    integer, parameter :: v_count = v_size(1) * v_size(2) * v_size(3)
    real,    parameter :: Vmax = 46e-3 !Maximum substrate uptake
    real,    parameter :: Ks = 2.34e-3 ! Half-saturaton const (substrate uptake)
-   real,    parameter :: Zqd = 8.3, Zqu = 1230.0 !QSM production 
+   real,    parameter :: Zqd = 8.3, Zqu = 0!1230.0 !QSM production 
    real,    parameter :: Kq = 10
    real,    parameter :: Ymax = 0.444 
    real,    parameter :: maintenance = 0.6e-3 
@@ -20,7 +20,8 @@ module input
    real,    parameter :: density_cell = 290.0
    real,    parameter :: max_vol_frac = 0.52
    real,    parameter :: Mmax = 14700.0
-   integer, parameter :: Nmax = floor(density_cell * max_vol_frac * v_width**3 / Mmax) !Standard input: 50
+   integer, parameter :: pmax = floor(density_cell * max_vol_frac * v_width**3 / Mmax) !Standard input: 50
+   integer, parameter :: Nmax = 2*pmax
    real,    parameter :: alpha = 1.33
    real,    parameter :: beta = 10
    real,    parameter :: gamma = 0.1
@@ -188,7 +189,40 @@ program simulate
    call get_count_particles(biomass(:,1,1),eps_count(1,1),i)
    print*,"Par"   ,i
 
+
+   ! Write to file
+   call write_count(biomass, eps_count)
+   print*, "Finished writing to *.dat files"
+
+
 end program simulate
+
+
+subroutine write_count(biomass, eps_count)
+   ! Easy scatter plot
+   use input
+   implicit none
+   real, intent(in) :: biomass(Nmax, v_count, 2)
+   integer, intent(in) :: eps_count(v_count, 2)
+   integer :: i, count, pos(3),j
+   real r(3)
+
+   open(unit=1, file="count7.dat", status="new")
+   do i = 1,v_count
+      call index2xyz(i,pos)
+      !call mass2cell_count(sum( biomass(:,i,1) ), count )
+      call get_count_particles(biomass(:,i,1), eps_count(i,1), count)
+
+      do j = 1,count
+         call random_number(r(1))
+         call random_number(r(2))
+         call random_number(r(3))
+         write(1,*) pos(1)+r(1), pos(2)+r(2), pos(3)+r(3)
+      enddo
+   enddo
+
+   close(1)
+end
 
 
 
@@ -236,10 +270,10 @@ subroutine update_pressure(i, biomass, eps_count, pressure)
 
    call get_count_particles(biomass(:,i,1), eps_count(i,1), count)
 
-   if (count >= Nmax) then
-      pressure(i,2) = real(Nmax)
+   if (count >= pmax) then
+      pressure(i,2) = real(pmax)
    else 
-      pressure(i,2) = real(count) / (real(Nmax) - real(count))
+      pressure(i,2) = real(count) / (real(pmax) - real(count))
    end if
 
 end
@@ -257,6 +291,7 @@ subroutine update_displacement(i, pressure, biomass, eps_count, up)
    integer :: up_temp,j,k, j_list_neigh(6), count, count_neigh, chosen, rand_int, count_displaced
    real :: mass,tot_pressure, rand, P(6) ! Cumulative probability
    logical :: eps_displaced
+   integer :: pos(3),pos2(3)
 
 
    call get_count_particles(biomass(:,i,1), eps_count(i,1), count)
@@ -311,7 +346,7 @@ subroutine update_displacement(i, pressure, biomass, eps_count, up)
 
       if (all(P == 0.0)) then
          count_displaced = 0
-         print*, "Voxel overloaded", i
+         !print*, "Voxel overloaded", i
          return
       endif
 
@@ -325,6 +360,9 @@ subroutine update_displacement(i, pressure, biomass, eps_count, up)
                exit
             endif
          enddo
+         call index2xyz(i,pos)
+         call index2xyz(chosen,pos2)
+         !print*, "Displace (pos):", pos, "to", pos2 
    
          ! Choose particle type
          call random_number(rand)
@@ -375,9 +413,6 @@ subroutine update_eps(i, biomass, up, eps_amount, eps_count)
       eps_amount(i,2) = eps_amount(i,2) - eps_mass
       eps_count(i,2) = eps_count(i,2) + 1
 
-      if (eps_count(i,2) > Nmax) then
-         print*, "EPS count too high", i, eps_count(i,2)
-      end if
    end if
 end
 
@@ -389,8 +424,7 @@ subroutine update_mass(i, c_s, biomass)
    real, intent(in) :: c_s(v_count, 2)
    real, intent(out) :: biomass(Nmax,v_count,2)
 
-   biomass(:,i,2) = biomass(:,i,1) &
-      + dt*Ymax* ( c_s(i,2)/(Ks + c_s(i,2) ) - maintenance)*biomass(:,i,1)
+   biomass(:,i,2) = biomass(:,i,2) + dt*Ymax* ( c_s(i,2)/(Ks + c_s(i,2) ) - maintenance)*biomass(:,i,2)
 end
 
 subroutine update_production_q(i, c_q, biomass, up, prod_q)
@@ -421,8 +455,13 @@ subroutine get_count_up(i,biomass,up,count_up)
    integer, intent(in) :: up(Nmax,v_count,2)
    integer, intent(out) :: count_up
    integer :: count,j
+   real :: M
 
    count_up = sum(up(:,i,1))
+   M = sum(biomass(:,i,1))
+   call mass2cell_count(M,count)
+   if (count_up > count) count_up = count
+
 end
 
 subroutine get_count_down(i,biomass,up,count_down)
@@ -440,6 +479,7 @@ subroutine get_count_down(i,biomass,up,count_down)
    M = sum(biomass(:,i,1))
    call mass2cell_count(M,count)
    count_down = count - sum(up(:,i,1))
+   if (count_down < 0) count_down = 0
 
 end
 
@@ -557,14 +597,16 @@ subroutine update_concentration(i, prod, diff, c)
    integer, intent(in) :: i
    real, dimension(v_count,2), intent(out) :: c
    real, intent(in) :: prod(v_count), diff
-   integer :: j_list_neigh(6), j
+   integer :: j_list_neigh(6), j, k
    
    call get_index_neighbours(i, j_list_neigh)
    do j = 1,6 !For every neighbour
-      if (.NOT. (j_list_neigh(j)  < 1 ) ) then
-         c(i,2) = c(i,2) + dt * (c(j_list_neigh(j),1) - c(i,1)) *  diff/(v_width*v_width) + dt*prod(i)/(v_width**3)
+      k = j_list_neigh(j)
+      if ( k > 0 ) then
+         c(i,2) = c(i,2) + dt * (c(k,1) - c(i,1)) *  diff/(v_width*v_width) + dt*prod(i)/(v_width**3)
       end if
    end do
+   if (c(i,2) < 0) c(i,2) = 0.0
 end
 
 subroutine biomass_remove_random(i, biomass, mass, up, up_temp)
@@ -608,6 +650,7 @@ subroutine biomass_append(i, mass,up_temp,biomass,up)
    use input !Nmax
    implicit none
 
+
    integer, intent(in) :: i
    real, intent(in) :: mass
    real, intent(out) :: biomass(Nmax,v_count,2)
@@ -622,7 +665,7 @@ subroutine biomass_append(i, mass,up_temp,biomass,up)
          exit
       endif
 
-      if (j == Nmax) print*, "Couldn't append!", biomass(:,i,2)
+      !if (j == Nmax) print*, "Couldn't append!", biomass(:,i,2)
    enddo
 
 end
