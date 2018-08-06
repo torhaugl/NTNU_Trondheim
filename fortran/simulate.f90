@@ -2,8 +2,8 @@ module input
    implicit none
 
    ! Input file / Parameters
-   real,    parameter :: dt = 0.5/60.0 !time step (min)
-   real,    parameter :: final_time = 0.1*60.0 !minutes
+   real,    parameter :: dt = 0.7/60.0 !time step (min)
+   real,    parameter :: final_time = 14*60.0 !minutes
    integer, parameter :: NumTrials = floor(final_time / dt)
    real,    parameter :: c_bulk = 0.2 ! Concentration bulk substrate
    real,    parameter :: v_width = 17.0 !Voxel length
@@ -29,7 +29,7 @@ module input
    real,    parameter :: Zed = 0, Zeu = 0.001
    real,    parameter :: mu = 0.001 !Transfer coefficient
 
-   integer, parameter :: S_q = 1, S_s = 10 ! Substeps Concentration
+   integer, parameter :: S_q = 10, S_s = 10 ! Substeps Concentration
 end
 
 program simulate
@@ -144,7 +144,7 @@ program simulate
       timer(8) = (finish_update - start_update) + timer(8)
 
       call cpu_time(start_update)
-      call update_concentration_q(biomass,up, diff_q, c_q) !QSM
+      !call update_concentration_q(biomass,up, diff_q, c_q) !QSM
       call cpu_time(finish_update)
       timer(9) = (finish_update - start_update) + timer(9)
 
