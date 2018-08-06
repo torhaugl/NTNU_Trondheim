@@ -2,8 +2,8 @@ module input
    implicit none
 
    ! Input file / Parameters
-   real,    parameter :: dt = 0.7/60.0 !time step (min)
-   real,    parameter :: final_time = 14.0*60.0 !minutes
+   real,    parameter :: dt = 0.5/60.0 !time step (min)
+   real,    parameter :: final_time = 0.1*60.0 !minutes
    integer, parameter :: NumTrials = floor(final_time / dt)
    real,    parameter :: c_bulk = 0.2 ! Concentration bulk substrate
    real,    parameter :: v_width = 17.0 !Voxel length
@@ -144,9 +144,7 @@ program simulate
       timer(8) = (finish_update - start_update) + timer(8)
 
       call cpu_time(start_update)
-      !do i = 1, v_count
-         !call update_concentration_q(prod_q, diff_q, c_q) !QSM
-      !enddo
+      call update_concentration_q(biomass,up, diff_q, c_q) !QSM
       call cpu_time(finish_update)
       timer(9) = (finish_update - start_update) + timer(9)
 
@@ -481,24 +479,6 @@ subroutine update_mass(i, c_s, biomass)
    biomass(:,i,2) = biomass(:,i,2) + dt*Ymax* ( Vmax*c_s(i,2)/(Ks + c_s(i,2) ) - maintenance)*biomass(:,i,2)
 end
 
-subroutine update_production_q(i, c_q, biomass, up, prod_q)
-   ! Output the production of QSM in voxel i
-   use input !v_count,Nmax, Kq, Zqd, Zqu
-   implicit none
-
-   integer, intent(in)  :: i
-   real, intent(in)     :: c_q(v_count,2+S_q)
-   real, intent(in), dimension(Nmax,v_count,2) :: biomass
-   integer, intent(in), dimension(Nmax,v_count,2) :: up
-   real, intent(out)    :: prod_q(v_count)
-   integer :: count_up, count_down
-
-   call get_count_up(i,biomass,up,count_up)
-   call get_count_down(i,biomass,up,count_down)
-
-   prod_q(i) = Zqd*count_down + Zqu*count_up * c_q(i,1)/(Kq + c_q(i,1) )
-end
-
 subroutine get_count_up(i,biomass,up,count_up)
    ! TODO Worth it?
    use input
@@ -627,21 +607,9 @@ subroutine probability_up2down(i, c_q, prob)
    prob = beta / (1 + gamma *c_q(i,1))
 end
 
-subroutine update_production_s(c_s, biomass, prod_s)
-   ! Calculate the new production of substrate and QSM
-   use input !Vmax, Ks, Nmax
-   implicit none
-
-   real, intent(in) :: c_s(v_count,2+S_s), biomass(Nmax, v_count, 2)
-   real, intent(out) :: prod_s(v_count)
-   real M(v_count)
-
-   M = sum(biomass(:,:,1), dim=1)
-   prod_s(:) = - Vmax* M(:) * c_s(:,1) / (Ks + c_s(:,1))
-end
 
 subroutine update_concentration_s(biomass,diff, c)
-   ! Updates conentration (Forward Euler step)
+   ! Updates conentration (Forward Euler step / IMEX)
    ! Input index, diffusion constant, voxel width, c before/after
    ! Output new concentration
    use input
@@ -674,36 +642,54 @@ subroutine update_concentration_s(biomass,diff, c)
                endif
             end if
          end do
+         if(c(i,2+s) < 0.0) c(i,2+s) = 0.0
       enddo
    enddo
    c(:,2) = c(:,2+S_s)
 end
 
-subroutine update_concentration_q(i, prod, diff, c)
+subroutine update_concentration_q(biomass, up, diff, c)
    ! Updates conentration (Forward Euler step)
    ! Input index, diffusion constant, voxel width, c before/after
    ! Output new concentration
    use input
    implicit none
-   integer, intent(in) :: i
-   real, dimension(v_count,2+S_q), intent(out) :: c
-   real, intent(in) :: prod(v_count), diff
-   integer :: j_list_neigh(6), j, k, s
-   
+   real,    dimension(Nmax,v_count,2), intent(in) :: biomass
+   integer, dimension(Nmax,v_count,2), intent(in) :: up
+   real,    intent(in) :: diff
+   real,    dimension(v_count,2+S_q), intent(out) :: c
+   real,    dimension(v_count) :: prod
+   integer :: j_list_neigh(6), i, j, k, s
+   integer :: count_up, count_down
+   !TODO Move count function before s-loop
+
    do s = 1, S_q ! Substeps
-      call get_index_neighbours(i, j_list_neigh)
-      do j = 1,6 !For every neighbour
-         k = j_list_neigh(j)
-         if ( k > 0 ) then
-            if (s == 1) then
-               c(i,3) = c(i,1) + dt/S_q * (c(k,1) - c(i,1)) *  diff/(v_width*v_width) + dt/S_q*prod(i)/(v_width**3)
-            else
-               c(i,2+s) = c(i,1+s) + dt/S_q*(c(k,1+s) - c(i,1+s)) *  diff/(v_width*v_width) + dt/S_q*prod(i)/(v_width**3)
+      c(:,2+s) = c(:,1+s)
+      
+      do i = 1,v_count
+         call get_count_up(i,biomass,up,count_up)
+         call get_count_down(i,biomass,up,count_down)
+         if (Kq == 0) then
+            prod(i) = Zqd*count_down + Zqu*count_up
+         else
+            prod(i) = Zqd*count_down + Zqu*count_up * c(i,1+s)/(Kq + c(i,1+s) )
+         endif
+   
+         call get_index_neighbours(i, j_list_neigh)
+         do j = 1,6 !For every neighbour
+            k = j_list_neigh(j)
+            if ( k > 0 ) then
+               if (s == 1) then
+                  c(i,3) = c(i,3) + dt/S_q * (c(k,1) - c(i,1)) *  diff/(v_width*v_width) + dt/S_q*prod(i)/(v_width**3)
+               else
+                  c(i,2+s) = c(i,2+s) + dt/S_q*(c(k,1+s) - c(i,1+s)) *  diff/(v_width*v_width) + dt/S_q*prod(i)/(v_width**3)
+               endif
             endif
-         end if
-      end do
+         enddo
+         if(c(i,2+s) < 0.0) c(i,2+s) = 0.0
+      enddo
    enddo
-   c(i,2) = c(i,2+S_q)
+   c(:,2) = c(:,2+S_q)
 end
 
 subroutine biomass_remove_random(i, biomass, mass, up, up_temp)
