@@ -2,8 +2,8 @@ module input
    implicit none
 
    ! Input file / Parameters
-   real,    parameter :: dt = 0.1/60.0 !time step (min)
-   real,    parameter :: final_time = 0.2*60.0 !minutes
+   real,    parameter :: dt = 0.7/60.0 !time step (min)
+   real,    parameter :: final_time = 14.0*60.0 !minutes
    integer, parameter :: NumTrials = floor(final_time / dt)
    real,    parameter :: c_bulk = 0.2 ! Concentration bulk substrate
    real,    parameter :: v_width = 17.0 !Voxel length
@@ -89,11 +89,15 @@ program simulate
    ! TODO Slow parts: 
    !  5 update_displacement
    do n = 1,NumTrials
-      if (mod(n,floor(NumTrials/100.0)) == 0) print*, floor((real(n)/real(NumTrials)*100.0))
+      if (mod(n,nint(NumTrials/10.0)) == 0 .OR. n==1) then
+         print*, nint(real(n)/real(NumTrials)*100.0)
+         write(filename,'(a5, i3)') "data/", nint(real(n)/real(NumTrials)*100.0)
+         call write_cellcount(biomass, filename)
+      endif
 
       !call cpu_time(start_update)
       !do i = 1, v_count
-         !call update_eps(i, biomass, up, eps_amount, eps_count)
+      !   call update_eps(i, biomass, up, eps_amount, eps_count)
       !enddo
       !call cpu_time(finish_update)
       !timer(1) = (finish_update - start_update) + timer(1)
@@ -108,24 +112,24 @@ program simulate
 
       !call cpu_time(start_update)
       !do i = 1, v_count
-         !call update_stochastics(i,c_q,biomass,up)
+      !   call update_stochastics(i,c_q,biomass,up)
       !enddo
       !call cpu_time(finish_update)
       !timer(3) = (finish_update - start_update) + timer(3)
 
-      !call cpu_time(start_update)
-      !do i = 1, v_count
-         !call update_pressure(i, biomass, eps_count, pressure)
-      !enddo
-      !call cpu_time(finish_update)
-      !timer(4) = (finish_update - start_update) + timer(4)
+      call cpu_time(start_update)
+      do i = 1, v_count
+         call update_pressure(i, biomass, eps_count, pressure)
+      enddo
+      call cpu_time(finish_update)
+      timer(4) = (finish_update - start_update) + timer(4)
 
-      !call cpu_time(start_update)
-      !do i = 1, v_count
-      !   call update_displacement(i, pressure, biomass, eps_count,up)
-      !enddo
-      !call cpu_time(finish_update)
-      !timer(5) = (finish_update - start_update) + timer(5)
+      call cpu_time(start_update)
+      do i = 1, v_count
+         call update_displacement(i, pressure, biomass, eps_count,up)
+      enddo
+      call cpu_time(finish_update)
+      timer(5) = (finish_update - start_update) + timer(5)
 
       !call cpu_time(start_update)
       !do i = 1, v_count
@@ -139,12 +143,12 @@ program simulate
       call cpu_time(finish_update)
       timer(8) = (finish_update - start_update) + timer(8)
 
-      !call cpu_time(start_update)
+      call cpu_time(start_update)
       !do i = 1, v_count
-      !   call update_concentration(i, prod_q, diff_q, c_q) !QSM
+         !call update_concentration_q(prod_q, diff_q, c_q) !QSM
       !enddo
-      !call cpu_time(finish_update)
-      !timer(9) = (finish_update - start_update) + timer(9)
+      call cpu_time(finish_update)
+      timer(9) = (finish_update - start_update) + timer(9)
 
       ! Insert the newly calculated concentrations
       c_s(:,1) = c_s(:,2)
@@ -156,7 +160,7 @@ program simulate
       pressure(:,1) = pressure(:,2)
 
       ! bulk
-      c_s(9900:10000,:) = 0.0! TODO c_bulk
+      c_s(9900:10000,:) = c_bulk
       c_q(9900:10000,:) = 0.0
       biomass(:,9900,:) = 0.0
       eps_count(9900:10000,:) = 0.0
@@ -228,6 +232,27 @@ subroutine write_count(biomass, eps_count, filename)
    close(1)
 end
 
+subroutine write_cellcount(biomass, filename)
+   use input
+   implicit none
+
+   real, intent(in) :: biomass(Nmax, v_count, 2)
+   character(len=20) :: filename
+   integer :: sum=0, tsum=0, i,j, count
+
+   open(unit=1,file=filename,status='new')
+   do j=1,v_count
+      tsum=0
+      do i=1,Nmax
+         call mass2cell_count(biomass(i,j,1), count)
+         tsum = tsum + count
+      enddo
+      write(1,*) tsum
+      sum = sum + tsum
+   enddo
+   write(1,*) "total", sum
+end
+
 subroutine write_concentration(c, filename)
    ! Easy scatter
    use input
@@ -256,9 +281,6 @@ subroutine write_concentration(c, filename)
    close(1)
 end
 
-
-
-
 subroutine update_division(i, biomass, up)
    ! TODO Finish this
    use input
@@ -269,7 +291,6 @@ subroutine update_division(i, biomass, up)
    real :: randf
    real :: newmass
    integer :: j, count, newup
-
 
    do j = 1,Nmax
       if (biomass(j,i,1) > Mmax) then
@@ -457,7 +478,7 @@ subroutine update_mass(i, c_s, biomass)
    real, intent(in) :: c_s(v_count, 2+S_s)
    real, intent(out) :: biomass(Nmax,v_count,2)
 
-   biomass(:,i,2) = biomass(:,i,2) + dt*Ymax* ( c_s(i,2)/(Ks + c_s(i,2) ) - maintenance)*biomass(:,i,2)
+   biomass(:,i,2) = biomass(:,i,2) + dt*Ymax* ( Vmax*c_s(i,2)/(Ks + c_s(i,2) ) - maintenance)*biomass(:,i,2)
 end
 
 subroutine update_production_q(i, c_q, biomass, up, prod_q)
