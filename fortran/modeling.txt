@@ -1,0 +1,31 @@
+Forslag til modellering
+
+Predict concenctration at times
+When do concentration 'spike'
+When should we start to measure biofilm, how often (often during spike)
+How growth medium changes biofilm
+
+With bacteriophage
+	How much is implemented
+	How much is transferred to next generation
+	Survival of bacteriophages?
+
+M13 decreases cell growth
+
+TODO Myself
+	Output to .csv for easy use in other programs
+	All output in 1 file?
+	Implement better timestep / more substeps (5 sec dt).
+	Loading bar
+	Clean code
+	Documentation!
+
+
+
+Collaboration:
+Input file
+	Automatically create many input modules, followed by compiling and executing the code. Should output to different folders as well.
+
+Ouptput file
+	Plot data?
+	From standard output to reasonable plot?
