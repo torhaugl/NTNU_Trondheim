@@ -1,46 +1,61 @@
+!  Author:           NTNU Trondheim, iGEM 18
+!  Written by:       Haugland, Tor Strømsem
+!  Acknowledgements: Pettersen, Jakob
+!  Github:           torhaugl/NTNU_Trondheim
+!
+!  Program which simulates time-steps of a 3D grid of voxels to
+!  calculate biofilm (EPS) and growth of bacteria/cell depending
+!  on quorom sensing molecules (QSM). QSM activates bacteria so
+!  that they produce much more EPS.
+!
+
 module input
    implicit none
-
-   ! Input file / Parameters
-   real,    parameter :: dt = 0.7/60.0 !time step (min)
-   real,    parameter :: final_time = 14*60.0 !minutes
-   integer, parameter :: NumTrials = floor(final_time / dt)
-   real,    parameter :: c_bulk = 0.2 ! Concentration bulk substrate
-   real,    parameter :: v_width = 17.0 !Voxel length
-   real,    parameter :: diff_s = 40680.0, diff_q = 33300.0 !Diffusion subst./QSM
-   integer, parameter :: v_size(3) = (/10,10,100/)
-   integer, parameter :: v_count = v_size(1) * v_size(2) * v_size(3)
-   real,    parameter :: Vmax = 0.046 !Maximum substrate uptake
-   real,    parameter :: Ks = 0.00234 ! Half-saturaton const (substrate uptake)
-   real,    parameter :: Zqd = 8.3, Zqu = 1230.0 !QSM production 
-   real,    parameter :: Kq = 10
-   real,    parameter :: Ymax = 0.444 
-   real,    parameter :: maintenance = 0.006
-   real,    parameter :: avg_mass_cell = 420.0
-   real,    parameter :: density_cell = 290.0
-   real,    parameter :: max_vol_frac = 0.52
-   real,    parameter :: Mmax = 14700.0
-   integer, parameter :: pmax = floor(density_cell * max_vol_frac * v_width**3 / Mmax) !Standard input: 50
-   integer, parameter :: Nmax = pmax
-   real,    parameter :: alpha = 1.33
-   real,    parameter :: beta = 10
-   real,    parameter :: gamma = 0.1
-   real,    parameter :: eps_mass = avg_mass_cell
-   real,    parameter :: Zed = 0, Zeu = 0.001
-   real,    parameter :: mu = 0.001 !Transfer coefficient
-   integer, parameter :: S_q = 10, S_s = 10 ! Substeps Concentration
+   ! Input file
+   real,    parameter :: dt            = 0.7/60.0 ! time step (min)
+   real,    parameter :: final_time    = 14.0*60.0 ! minutes
+   integer, parameter :: NumTrials     = floor(final_time / dt) ! #steps to finish calculation
+   real,    parameter :: c_bulk        = 0.2 ! Concentration bulk substrate
+   real,    parameter :: v_width       = 17.0 ! Voxel length
+   real,    parameter :: diff_s        = 40680.0
+   real,    parameter :: diff_q        = 33300.0 ! Diffusion substrate/QSM
+   integer, parameter :: v_size(3)     = (/10,10,100/) ! Sife of 3D grid of voxels in x,y,z direction
+   integer, parameter :: v_count       = v_size(1) * v_size(2) * v_size(3) ! #voxels
+   real,    parameter :: Vmax          = 0.046 !Maximum substrate uptake
+   real,    parameter :: Ks            = 0.00234 ! Half-saturaton const (substrate uptake)
+   real,    parameter :: Zqd           = 8.3
+   real,    parameter :: Zqu           = 1230.0 !QSM production 
+   real,    parameter :: Kq            = 10.0 ! Half-saturation QSM
+   real,    parameter :: Ymax          = 0.444 ! Bacteria yield percentage
+   real,    parameter :: maintenance   = 0.006 ! Bacteria eating
+   real,    parameter :: avg_mass_cell = 420.0 ! Average mass of bacteria
+   real,    parameter :: density_cell  = 290.0 ! Density of bacteria
+   real,    parameter :: max_vol_frac  = 0.52 ! Volume fraction that can be occupied in voxel
+   real,    parameter :: Mmax          = 14700.0 ! Maximum mass per particle
+   integer, parameter :: pmax          = floor(density_cell * max_vol_frac * v_width**3 / Mmax) ! Max #particle per particle
+   integer, parameter :: Nmax          = pmax ! Same as above, but used as length of arrays
+   real,    parameter :: alpha         = 1.33  ! Stochastic (down 2 up)
+   real,    parameter :: beta          = 10.0  ! Stochastic (up 2 down)
+   real,    parameter :: gamma         = 0.1   ! Stochastic (importance of QSM)
+   real,    parameter :: eps_mass      = avg_mass_cell ! Mass per EPS particle
+   real,    parameter :: Zed           = 0.0
+   real,    parameter :: Zeu           = 0.001 ! Production of EPS, (d)own/(u)p
+   real,    parameter :: mu            = 0.001 ! Transfer coefficient out of voxel
+   integer, parameter :: S_q           = 10
+   integer, parameter :: S_s           = 10 ! #Substeps for calculation of concentration
 end
 
+! TODO Implement use variable in more subroutines
 module variable
    use input
    implicit none
-
    integer, dimension(v_count,2)       :: eps_count
    real,    dimension(v_count,2)       :: eps_amount, pressure
    real,    dimension(v_count,2+S_s)   :: c_s
    real,    dimension(v_count,2+S_q)   :: c_q
    real,    dimension(Nmax,v_count,2)  :: biomass
    integer, dimension(Nmax,v_count,2)  :: up
+   real, dimension(9)                  :: timer ! Times total time of functions
 end
 
 program simulate
@@ -53,10 +68,10 @@ program simulate
    real, external :: avg
 
    ! Variables
-   real, dimension(v_count)   :: M
    integer                    :: i, n ! Indexes for loop
-   real                       :: start, finish, start_update, finish_update, r, timer(9)
-   character(10)              :: time
+   real                       :: r ! Random number
+   real                       :: start, finish ! Total time taken
+   character(10)              :: time ! Output time started in string
    character(20)              :: filename
 
    ! Initialize arrays
@@ -85,8 +100,6 @@ program simulate
 
    call cpu_time(start)
 
-   ! TODO Updates independent of neighbours (all except concentration, displacement)
-   !      can be calculated outside voxel loop
    do n = 1,NumTrials
       if (mod(n,nint(NumTrials/10.0)) == 0 .OR. n==1) then
          print*, nint(real(n)/real(NumTrials)*100.0)
@@ -94,73 +107,7 @@ program simulate
          call write_cellcount(biomass, filename)
       endif
 
-      call cpu_time(start_update)
-      do i = 1, v_count
-         call update_eps(i, biomass, up, eps_amount, eps_count)
-      enddo
-      call cpu_time(finish_update)
-      timer(1) = (finish_update - start_update) + timer(1)
-
-      call cpu_time(start_update)
-      do i = 1, v_count
-         call update_mass(i)
-         call update_division(i)
-      enddo
-      call cpu_time(finish_update)
-      timer(2) = (finish_update - start_update) + timer(2)
-
-      call cpu_time(start_update)
-      do i = 1, v_count
-         call update_stochastics(i)
-      enddo
-      call cpu_time(finish_update)
-      timer(3) = (finish_update - start_update) + timer(3)
-
-      call cpu_time(start_update)
-      do i = 1, v_count
-         call update_pressure(i, biomass, eps_count, pressure)
-      enddo
-      call cpu_time(finish_update)
-      timer(4) = (finish_update - start_update) + timer(4)
-
-      call cpu_time(start_update)
-      do i = 1, v_count
-         call update_displacement(i, pressure, biomass, eps_count,up)
-      enddo
-      call cpu_time(finish_update)
-      timer(5) = (finish_update - start_update) + timer(5)
-
-
-      call cpu_time(start_update)
-      call update_concentration_s(biomass, diff_s, c_s) !Substrate
-      call cpu_time(finish_update)
-      timer(8) = (finish_update - start_update) + timer(8)
-
-      call cpu_time(start_update)
-      call update_concentration_q(biomass,up, diff_q, c_q) !QSM
-      call cpu_time(finish_update)
-      timer(9) = (finish_update - start_update) + timer(9)
-
-      ! Insert the newly calculated concentrations
-      call cpu_time(start_update)
-      c_s(:,1) = c_s(:,2)
-      c_q(:,1) = c_q(:,2)
-      biomass(:,:,1) = biomass(:,:,2)
-      eps_count(:,1) = eps_count(:,2)
-      eps_amount(:,1) = eps_amount(:,2)
-      up(:,:,1) = up(:,:,2)
-      pressure(:,1) = pressure(:,2)
-
-      ! bulk
-      c_s(9900:10000,:) = c_bulk
-      c_q(9900:10000,:) = 0.0
-      biomass(:,9900,:) = 0.0
-      eps_count(9900:10000,:) = 0.0
-      eps_amount(9900:10000,:) = 0.0
-      up(:,9900:10000,:) = 0.0
-      pressure(9900:10000,:) = 0.0
-      call cpu_time(finish_update)
-      timer(7) = (finish_update - start_update) + timer(7)
+      call time_step()
    end do
 
    call cpu_time(finish)
@@ -190,15 +137,92 @@ program simulate
    !call write_count(biomass, eps_count, filename)
    !filename = "conc_cq2.dat"
    !call write_concentration(c_q, filename)
-   filename = "conc_cs4.dat"
-   call write_concentration(c_s, filename)
-
-   print*, "Finished writing to *.dat files"
+   !filename = "conc_cs4.dat"
+   !call write_concentration(c_s, filename)
+   !print*, "Finished writing to *.dat files"
 
 
 end program simulate
 
 
+subroutine time_step()
+   ! TODO Updates independent of neighbours (all except concentration, displacement)
+   !      can be calculated outside voxel loop
+   use input
+   use variable
+   implicit none
+
+   integer :: i
+   real :: start_update, finish_update
+
+   call cpu_time(start_update)
+   do i = 1, v_count
+      call update_eps(i, biomass, up, eps_amount, eps_count)
+   enddo
+   call cpu_time(finish_update)
+   timer(1) = (finish_update - start_update) + timer(1)
+
+   call cpu_time(start_update)
+   do i = 1, v_count
+      call update_mass(i)
+      call update_division(i)
+   enddo
+   call cpu_time(finish_update)
+   timer(2) = (finish_update - start_update) + timer(2)
+
+   call cpu_time(start_update)
+   do i = 1, v_count
+      call update_stochastics(i)
+   enddo
+   call cpu_time(finish_update)
+   timer(3) = (finish_update - start_update) + timer(3)
+
+   call cpu_time(start_update)
+   do i = 1, v_count
+      call update_pressure(i, biomass, eps_count, pressure)
+   enddo
+   call cpu_time(finish_update)
+   timer(4) = (finish_update - start_update) + timer(4)
+
+   call cpu_time(start_update)
+   do i = 1, v_count
+      call update_displacement(i, pressure, biomass, eps_count,up)
+   enddo
+   call cpu_time(finish_update)
+   timer(5) = (finish_update - start_update) + timer(5)
+
+
+   call cpu_time(start_update)
+   call update_concentration_s(biomass, diff_s, c_s) !Substrate
+   call cpu_time(finish_update)
+   timer(8) = (finish_update - start_update) + timer(8)
+
+   call cpu_time(start_update)
+   call update_concentration_q(biomass,up, diff_q, c_q) !QSM
+   call cpu_time(finish_update)
+   timer(9) = (finish_update - start_update) + timer(9)
+
+   ! Insert the newly calculated concentrations
+   call cpu_time(start_update)
+   c_s(:,1) = c_s(:,2)
+   c_q(:,1) = c_q(:,2)
+   biomass(:,:,1) = biomass(:,:,2)
+   eps_count(:,1) = eps_count(:,2)
+   eps_amount(:,1) = eps_amount(:,2)
+   up(:,:,1) = up(:,:,2)
+   pressure(:,1) = pressure(:,2)
+
+   ! bulk
+   c_s(9900:10000,:) = c_bulk
+   c_q(9900:10000,:) = 0.0
+   biomass(:,9900,:) = 0.0
+   eps_count(9900:10000,:) = 0.0
+   eps_amount(9900:10000,:) = 0.0
+   up(:,9900:10000,:) = 0.0
+   pressure(9900:10000,:) = 0.0
+   call cpu_time(finish_update)
+   timer(7) = (finish_update - start_update) + timer(7)
+end
 
 subroutine write_count(biomass, eps_count, filename)
    ! Easy scatter plot
