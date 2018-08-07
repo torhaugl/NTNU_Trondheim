@@ -45,8 +45,6 @@ end
 
 program simulate
    ! Simulates time-steps
-   ! TODO Check correct timesteps. Updating of values should
-   !      always refer to timestep 2
    use input
    use variable
    implicit none
@@ -87,14 +85,12 @@ program simulate
 
    call cpu_time(start)
 
-   ! TODO Updates independent of neighbours (all except concentration)
+   ! TODO Updates independent of neighbours (all except concentration, displacement)
    !      can be calculated outside voxel loop
-   ! TODO Slow parts: 
-   !  5 update_displacement
    do n = 1,NumTrials
       if (mod(n,nint(NumTrials/10.0)) == 0 .OR. n==1) then
          print*, nint(real(n)/real(NumTrials)*100.0)
-         write(filename,'(a5, i3)') "data/", nint(real(n)/real(NumTrials)*100.0)
+         write(filename,'(a, i0)') "data/", nint(real(n)/real(NumTrials)*100.0)
          call write_cellcount(biomass, filename)
       endif
 
@@ -107,15 +103,15 @@ program simulate
 
       call cpu_time(start_update)
       do i = 1, v_count
-         call update_mass(i, c_s, biomass)
-         call update_division(i, biomass, up)
+         call update_mass(i)
+         call update_division(i)
       enddo
       call cpu_time(finish_update)
       timer(2) = (finish_update - start_update) + timer(2)
 
       call cpu_time(start_update)
       do i = 1, v_count
-         call update_stochastics(i,c_q,biomass,up)
+         call update_stochastics(i)
       enddo
       call cpu_time(finish_update)
       timer(3) = (finish_update - start_update) + timer(3)
@@ -181,9 +177,9 @@ program simulate
    print*,"AVG"   ,avg(c_s(:,1)) ,avg(c_q(:,1)) ,avg(eps_amount(:,1))
    print*,"Bio"   ,biomass(:4,1,1)
    print*,"upp"   ,up(:4,1,1)
-   call get_count_up(1,biomass,up,i)
+   call get_count_up(1,i)
    print*,"Up:"   ,i
-   call get_count_down(1,biomass,up,i)
+   call get_count_down(1,i)
    print*,"Dow"   ,i
    call get_count_particles(biomass(:,1,1),eps_count(1,1),i)
    print*,"Par"   ,i
@@ -280,13 +276,12 @@ subroutine write_concentration(c, filename)
    close(1)
 end
 
-subroutine update_division(i, biomass, up)
+subroutine update_division(i)
    ! TODO Finish this
    use input
+   use variable !biomass
    implicit none
    integer, intent(in) :: i
-   real, intent(out) :: biomass(Nmax,v_count,2)
-   integer, intent(out) ::up(Nmax,v_count,2)
    real :: randf
    real :: newmass
    integer :: j, count, newup
@@ -446,7 +441,6 @@ end
 
 subroutine update_eps(i, biomass, up, eps_amount, eps_count)
    ! Calculate new eps. Create particle if eps > eps_mass
-   ! TODO Check total particle count (Pressure?)
    use input !v_count Nmax Zed Zeu eps_mass
    implicit none
 
@@ -457,37 +451,34 @@ subroutine update_eps(i, biomass, up, eps_amount, eps_count)
    integer, intent(out) :: eps_count(v_count,2)
    integer :: count_up, count_down
 
-   call get_count_up(i,biomass,up,count_up)
-   call get_count_down(i,biomass,up,count_down)
+   call get_count_up(i,count_up)
+   call get_count_down(i,count_down)
 
    eps_amount(i,2) = eps_amount(i,2) + Zed*count_down + Zeu*count_up
 
    if (eps_amount(i,2) >= eps_mass) then
       eps_amount(i,2) = eps_amount(i,2) - eps_mass
       eps_count(i,2) = eps_count(i,2) + 1
-
    end if
 end
 
-subroutine update_mass(i, c_s, biomass)
+subroutine update_mass(i)
    use input !v_count Nmax Ymax, Ks, Vmax, m, dt
+   use variable !c_s, biomass
    implicit none
 
    integer, intent(in) :: i
-   real, intent(in) :: c_s(v_count, 2+S_s)
-   real, intent(out) :: biomass(Nmax,v_count,2)
 
    biomass(:,i,2) = biomass(:,i,2) + dt*Ymax* ( Vmax*c_s(i,2)/(Ks + c_s(i,2) ) - maintenance)*biomass(:,i,2)
 end
 
-subroutine get_count_up(i,biomass,up,count_up)
+subroutine get_count_up(i,count_up)
    ! TODO Worth it?
    use input
+   use variable
    implicit none
 
    integer, intent(in) :: i
-   real, intent(in) :: biomass(Nmax,v_count,2)
-   integer, intent(in) :: up(Nmax,v_count,2)
    integer, intent(out) :: count_up
    integer :: count,j
    real :: M
@@ -499,14 +490,13 @@ subroutine get_count_up(i,biomass,up,count_up)
 
 end
 
-subroutine get_count_down(i,biomass,up,count_down)
+subroutine get_count_down(i,count_down)
    ! TODO Worth it?
    use input
+   use variable
    implicit none
 
    integer, intent(in) :: i
-   real, intent(in) :: biomass(Nmax,v_count,2)
-   integer, intent(in) :: up(Nmax,v_count,2)
    integer, intent(out) :: count_down
    integer :: count,j
    real :: M=0 !Tot mass in voxel
@@ -520,7 +510,7 @@ end
 
 subroutine get_count_particles(biomass_particle,eps_count_particle, count)
    ! TODO Worth it?
-   ! Particle count in voxel! Misused as count in particle
+   ! Particle count in voxel!
    ! Nonzero entries in biomass_particle are a particle
    use input
    implicit none
@@ -545,14 +535,13 @@ subroutine get_count_nonzero(arr, n)
    n = count(arr .NE. 0)
 end
 
-subroutine update_stochastics(i, c_q, biomass, up)
+subroutine update_stochastics(i)
    !TODO error due to up(j,i,1), j is not correct
    use input !v_count, dt
+   use variable !c_q, biomass, up
    implicit none
 
    integer, intent(in)  :: i
-   real,    intent(in)  :: c_q(v_count,2+S_q), biomass(Nmax,v_count,2)
-   integer, intent(out) :: up(Nmax,v_count,2)
    real :: d2u, u2d, rand
    integer :: count_up, count_down,count, count_d2u, count_u2d,n,j
 
@@ -561,8 +550,8 @@ subroutine update_stochastics(i, c_q, biomass, up)
       call mass2cell_count(biomass(j,i,1), count)
       count_down = count - count_up
 
-      call probability_down2up(i,c_q,d2u)
-      call probability_up2down(i,c_q,u2d)
+      call probability_down2up(i,d2u)
+      call probability_up2down(i,u2d)
    
       ! Down -> Up
       count_d2u = 0
@@ -586,30 +575,30 @@ subroutine update_stochastics(i, c_q, biomass, up)
 
 end
 
-subroutine probability_down2up(i, c_q, prob)
+subroutine probability_down2up(i, prob)
    ! Calculates probability down to up
    use input !v_count, alpha, gamma
+   use variable !c_q
    implicit none
    integer, intent(in) :: i
-   real, intent(in) :: c_q(v_count,2+S_q)
    real, intent(out) :: prob
 
    prob = alpha*c_q(i,1) / (1 + gamma *c_q(i,1))
 end
 
-subroutine probability_up2down(i, c_q, prob)
+subroutine probability_up2down(i, prob)
    ! Calculates probability down to up
    use input !v_count, beta, gamma
+   use variable
    implicit none
    integer, intent(in) :: i
-   real, intent(in) :: c_q(v_count,2+S_q)
    real, intent(out) :: prob
 
    prob = beta / (1 + gamma *c_q(i,1))
 end
 
 
-subroutine update_concentration_s(biomass,diff, c)
+subroutine update_concentration_s(biomass, diff, c)
    ! Updates conentration (Forward Euler step / IMEX)
    ! Input index, diffusion constant, voxel width, c before/after
    ! Output new concentration
@@ -668,8 +657,8 @@ subroutine update_concentration_q(biomass, up, diff, c)
       c(:,2+s) = c(:,1+s)
       
       do i = 1,v_count
-         call get_count_up(i,biomass,up,count_up)
-         call get_count_down(i,biomass,up,count_down)
+         call get_count_up(i,count_up)
+         call get_count_down(i,count_down)
          if (Kq == 0) then
             prod(i) = Zqd*count_down + Zqu*count_up
          else
