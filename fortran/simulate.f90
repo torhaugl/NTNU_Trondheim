@@ -28,8 +28,19 @@ module input
    real,    parameter :: eps_mass = avg_mass_cell
    real,    parameter :: Zed = 0, Zeu = 0.001
    real,    parameter :: mu = 0.001 !Transfer coefficient
-
    integer, parameter :: S_q = 10, S_s = 10 ! Substeps Concentration
+end
+
+module variable
+   use input
+   implicit none
+
+   integer, dimension(v_count,2)       :: eps_count
+   real,    dimension(v_count,2)       :: eps_amount, pressure
+   real,    dimension(v_count,2+S_s)   :: c_s
+   real,    dimension(v_count,2+S_q)   :: c_q
+   real,    dimension(Nmax,v_count,2)  :: biomass
+   integer, dimension(Nmax,v_count,2)  :: up
 end
 
 program simulate
@@ -37,26 +48,18 @@ program simulate
    ! TODO Check correct timesteps. Updating of values should
    !      always refer to timestep 2
    use input
+   use variable
    implicit none
 
    ! Functions
    real, external :: avg
 
    ! Variables
-   real,    dimension(v_count)         :: prod_s, prod_q
-   integer, dimension(v_count,2)       :: eps_count
-   real,    dimension(v_count,2)       :: eps_amount, pressure
-   real,    dimension(v_count,2+S_s)   :: c_s
-   real,    dimension(v_count,2+S_q)   :: c_q
-   real,    dimension(Nmax,v_count,2)  :: biomass
-   integer, dimension(Nmax,v_count,2)  :: up
-   real, dimension(v_count) :: M
-
-   ! Loops
-   integer :: i, n ! Standard indexes for loop
-   real :: start, finish, start_update, finish_update, r, timer(9)
-   character(10) :: time
-   character(20) :: filename
+   real, dimension(v_count)   :: M
+   integer                    :: i, n ! Indexes for loop
+   real                       :: start, finish, start_update, finish_update, r, timer(9)
+   character(10)              :: time
+   character(20)              :: filename
 
    ! Initialize arrays
    c_s(:,:) = c_bulk
@@ -95,12 +98,12 @@ program simulate
          call write_cellcount(biomass, filename)
       endif
 
-      !call cpu_time(start_update)
-      !do i = 1, v_count
-      !   call update_eps(i, biomass, up, eps_amount, eps_count)
-      !enddo
-      !call cpu_time(finish_update)
-      !timer(1) = (finish_update - start_update) + timer(1)
+      call cpu_time(start_update)
+      do i = 1, v_count
+         call update_eps(i, biomass, up, eps_amount, eps_count)
+      enddo
+      call cpu_time(finish_update)
+      timer(1) = (finish_update - start_update) + timer(1)
 
       call cpu_time(start_update)
       do i = 1, v_count
@@ -110,12 +113,12 @@ program simulate
       call cpu_time(finish_update)
       timer(2) = (finish_update - start_update) + timer(2)
 
-      !call cpu_time(start_update)
-      !do i = 1, v_count
-      !   call update_stochastics(i,c_q,biomass,up)
-      !enddo
-      !call cpu_time(finish_update)
-      !timer(3) = (finish_update - start_update) + timer(3)
+      call cpu_time(start_update)
+      do i = 1, v_count
+         call update_stochastics(i,c_q,biomass,up)
+      enddo
+      call cpu_time(finish_update)
+      timer(3) = (finish_update - start_update) + timer(3)
 
       call cpu_time(start_update)
       do i = 1, v_count
@@ -131,12 +134,6 @@ program simulate
       call cpu_time(finish_update)
       timer(5) = (finish_update - start_update) + timer(5)
 
-      !call cpu_time(start_update)
-      !do i = 1, v_count
-      !   call update_production_q(i, c_q, biomass, up, prod_q)
-      !enddo
-      !call cpu_time(finish_update)
-      !timer(7) = (finish_update - start_update) + timer(7)
 
       call cpu_time(start_update)
       call update_concentration_s(biomass, diff_s, c_s) !Substrate
@@ -144,11 +141,12 @@ program simulate
       timer(8) = (finish_update - start_update) + timer(8)
 
       call cpu_time(start_update)
-      !call update_concentration_q(biomass,up, diff_q, c_q) !QSM
+      call update_concentration_q(biomass,up, diff_q, c_q) !QSM
       call cpu_time(finish_update)
       timer(9) = (finish_update - start_update) + timer(9)
 
       ! Insert the newly calculated concentrations
+      call cpu_time(start_update)
       c_s(:,1) = c_s(:,2)
       c_q(:,1) = c_q(:,2)
       biomass(:,:,1) = biomass(:,:,2)
@@ -165,6 +163,8 @@ program simulate
       eps_amount(9900:10000,:) = 0.0
       up(:,9900:10000,:) = 0.0
       pressure(9900:10000,:) = 0.0
+      call cpu_time(finish_update)
+      timer(7) = (finish_update - start_update) + timer(7)
    end do
 
    call cpu_time(finish)
@@ -201,6 +201,7 @@ program simulate
 
 
 end program simulate
+
 
 
 subroutine write_count(biomass, eps_count, filename)
