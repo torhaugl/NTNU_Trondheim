@@ -59,7 +59,8 @@ program simulate
    character(20) :: filename
 
    ! Initialize arrays
-   c_s(:,:) = c_bulk
+   c_s(:,:) = 0.0!c_bulk
+   c_s(5000:5500,:) = c_bulk !TODO REMOVE
    c_q(:,:) = 0.0
    up(:,:,:) = 0
    biomass(:,:,:) = 0.0
@@ -69,11 +70,11 @@ program simulate
    timer(:) = 0.0
 
    ! Insert particles into biomass: 1-2 bacteria, 400-800 mass, inactive
-   do i = 1, v_size(1)*v_size(2)
-      call random_number(r)
-      call biomass_append(i, 400.0 + r*400.0, 0, biomass, up)
-      biomass(:,i,1) = biomass(:,i,2)
-   end do
+   !do i = 1, v_size(1)*v_size(2)
+   !   call random_number(r)
+   !   call biomass_append(i, 400.0 + r*400.0, 0, biomass, up)
+   !   biomass(:,i,1) = biomass(:,i,2)
+   !end do
 
    !!! CODE
    print*,"CODE START"
@@ -89,7 +90,14 @@ program simulate
    ! TODO Slow parts: 
    !  5 update_displacement
    do n = 1,NumTrials
-      if (mod(n,floor(NumTrials/100.0)) == 0) print*, floor((real(n)/real(NumTrials)*100.0))
+      if (mod(n,floor(NumTrials/10.0)) == 0 .OR. n == 1) then
+         print*, floor((real(n)/real(NumTrials)*100.0))
+         write (filename,"(A5,I2)") "data/", floor((real(n)/real(NumTrials)*100.0))
+         print*,filename
+         filename = trim(filename)
+         print*,filename
+         call write_concentration(c_s, filename)
+      endif
 
       !call cpu_time(start_update)
       !do i = 1, v_count
@@ -156,9 +164,9 @@ program simulate
       pressure(:,1) = pressure(:,2)
 
       ! bulk
-      c_s(9900:10000,:) = 0.0! TODO c_bulk
+      c_s(9900:10000,:) = c_bulk
       c_q(9900:10000,:) = 0.0
-      biomass(:,9900,:) = 0.0
+      biomass(:,9900:10000,:) = 0.0
       eps_count(9900:10000,:) = 0.0
       eps_amount(9900:10000,:) = 0.0
       up(:,9900:10000,:) = 0.0
