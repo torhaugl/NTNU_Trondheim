@@ -41,6 +41,7 @@ module variable
    real,    dimension(v_count,2+S_q)   :: c_q
    real,    dimension(Nmax,v_count,2)  :: biomass
    integer, dimension(Nmax,v_count,2)  :: up
+   real :: curr_time
 end
 
 program simulate
@@ -62,8 +63,8 @@ program simulate
    character(20)              :: filename
 
    ! Initialize arrays
-   c_s(:,:) = 0.0!c_bulk
-   c_s(5000:5500,:) = c_bulk !TODO REMOVE
+   curr_time = 0.0
+   c_s(:,:) = c_bulk
    c_q(:,:) = 0.0
    up(:,:,:) = 0
    biomass(:,:,:) = 0.0
@@ -88,61 +89,33 @@ program simulate
 
    call cpu_time(start)
 
-   ! TODO Updates independent of neighbours (all except concentration)
-   !      can be calculated outside voxel loop
-   ! TODO Slow parts:
-   !  5 update_displacement
+! TODO Updates independent of neighbours (all except concentration)
+!      can be calculated outside voxel loop
    do n = 1,NumTrials
+      ! Print
       if (mod(n,floor(NumTrials/10.0)) == 0 .OR. n == 1) then
          print*, floor((real(n)/real(NumTrials)*100.0))
-         write (filename,"(A5,I0)") "data/", floor((real(n)/real(NumTrials)*100.0))
+         write (filename,"(A5,I0,A4)") "data/", floor((real(n)/real(NumTrials)*100.0)), ".csv"
          filename = trim(filename)
-         call write_cellcount(biomass, filename)
+         call write_all(filename)
       endif
 
+      ! Cheap calculation
       call cpu_time(start_update)
       do i = 1, v_count
          call update_eps(i, biomass, up, eps_amount, eps_count)
+         call update_mass(i, c_s, biomass)
+         call update_division(i, biomass, up)
+         call update_stochastics(i,c_q,biomass,up)
+         call update_pressure(i, biomass, eps_count, pressure)
+         call update_displacement(i, pressure, biomass, eps_count,up)
       enddo
       call cpu_time(finish_update)
       timer(1) = (finish_update - start_update) + timer(1)
 
-      call cpu_time(start_update)
-      do i = 1, v_count
-         call update_mass(i, c_s, biomass)
-         call update_division(i, biomass, up)
-      enddo
-      call cpu_time(finish_update)
-      timer(2) = (finish_update - start_update) + timer(2)
-
-      call cpu_time(start_update)
-      do i = 1, v_count
-         call update_stochastics(i,c_q,biomass,up)
-      enddo
-      call cpu_time(finish_update)
-      timer(3) = (finish_update - start_update) + timer(3)
-
-      call cpu_time(start_update)
-      do i = 1, v_count
-         call update_pressure(i, biomass, eps_count, pressure)
-      enddo
-      call cpu_time(finish_update)
-      timer(4) = (finish_update - start_update) + timer(4)
-
-      call cpu_time(start_update)
-      do i = 1, v_count
-         call update_displacement(i, pressure, biomass, eps_count,up)
-      enddo
-      call cpu_time(finish_update)
-      timer(5) = (finish_update - start_update) + timer(5)
-
-
+      ! Concentration (Expensive calculation)
       call cpu_time(start_update)
       call update_concentration_s(biomass, diff_s, c_s) !Substrate
-      call cpu_time(finish_update)
-      timer(8) = (finish_update - start_update) + timer(8)
-
-      call cpu_time(start_update)
       call update_concentration_q(biomass,up, diff_q, c_q) !QSM
       call cpu_time(finish_update)
       timer(9) = (finish_update - start_update) + timer(9)
@@ -167,6 +140,8 @@ program simulate
       pressure(9900:10000,:) = 0.0
       call cpu_time(finish_update)
       timer(7) = (finish_update - start_update) + timer(7)
+
+      curr_time = curr_time + dt
    end do
 
    call cpu_time(finish)
@@ -192,26 +167,72 @@ program simulate
 
 
    ! Write to file
-   !filename = "conc_count2.dat"
-   !call write_count(biomass, eps_count, filename)
-   !filename = "conc_cq2.dat"
+   !filename = "data/conc_count2.dat"
+   !call write_count(filename)
+   !filename = "data/conc_cq2.dat"
    !call write_concentration(c_q, filename)
-   filename = "conc_cs4.dat"
-   call write_concentration(c_s, filename)
-
-   print*, "Finished writing to *.dat files"
+   !filename = "data/conc_cs4.dat"
+   !call write_concentration(c_s, filename)
+   !print*, "Finished writing to *.dat files"
 
 
 end program simulate
 
+!!!!!!!!!!!!!!!
+! SUBROUTINES !
+!!!!!!!!!!!!!!!
 
-
-subroutine write_count(biomass, eps_count, filename)
-   ! Easy scatter plot
+!  write_all --
+!     Outputs all important data to comma-separated values file (.csv)
+!     Each row corresponds to a unique voxel
+!     cs, cq, biomass, up, eps_count, eps_amount, pressure
+!
+!  Arguments:
+!     filename    A new file to write to
+!
+subroutine write_all(filename)
    use input
+   use variable
+   use csv_file ! Module from FLIBS
+      ! csv_write( lun, value, advance)
    implicit none
-   real, intent(in) :: biomass(Nmax, v_count, 2)
-   integer, intent(in) :: eps_count(v_count, 2)
+
+   character(len=20) :: filename
+   integer :: pos(3), i
+   logical :: exist
+
+   open(1,file=filename,status="new",action="write")
+   write(1,*) "time,x,y,z,cs,cq,biomass,up,eps_count,eps_amount"
+
+   do i =1, v_count
+      call index2xyz(i,pos)
+
+      call csv_write(1,curr_time             ,.FALSE.)
+      call csv_write(1,pos(1)                ,.FALSE.)
+      call csv_write(1,pos(2)                ,.FALSE.)
+      call csv_write(1,pos(3)                ,.FALSE.)
+      call csv_write(1,c_s(i,1)              ,.FALSE.)
+      call csv_write(1,c_q(i,1)              ,.FALSE.)
+      call csv_write(1,sum(biomass(:,i,1))   ,.FALSE.)
+      call csv_write(1,sum(up(:,i,1))        ,.FALSE.)
+      call csv_write(1,eps_count(i,1)        ,.FALSE.)
+      call csv_write(1,eps_amount(i,1)       ,.TRUE.)
+   enddo
+   close(1)
+end
+
+!  write_count --
+!     Outputs the particle count to a filetype
+!     which is easy to 3D-scatter plot. Each particle
+!     is placed at a random position in the voxel.
+!
+!  Arguments:
+!     filename    A new file to write to
+!
+subroutine write_count(filename)
+   use input
+   use variable
+   implicit none
    integer :: i, count, pos(3), j
    character(len=20) :: filename
    real r(3)
@@ -219,7 +240,6 @@ subroutine write_count(biomass, eps_count, filename)
    open(unit=1, file=filename, status="new")
    do i = 1,v_count
       call index2xyz(i,pos)
-      !call mass2cell_count(sum( biomass(:,i,1) ), count )
       call get_count_particles(biomass(:,i,1), eps_count(i,1), count)
 
       do j = 1,count
