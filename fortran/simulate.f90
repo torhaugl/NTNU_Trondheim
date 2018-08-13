@@ -93,18 +93,15 @@ program simulate
    ! TODO Slow parts: 
    !  5 update_displacement
    do n = 1,NumTrials
-<<<<<<< HEAD
       if (mod(n,floor(NumTrials/10.0)) == 0 .OR. n == 1) then
          print*, floor((real(n)/real(NumTrials)*100.0))
          write (filename,"(A5,I2)") "data/", floor((real(n)/real(NumTrials)*100.0))
          filename = trim(filename)
          call write_concentration(c_s, filename)
-=======
       if (mod(n,nint(NumTrials/10.0)) == 0 .OR. n==1) then
          print*, nint(real(n)/real(NumTrials)*100.0)
          write(filename,'(a5, i3)') "data/", nint(real(n)/real(NumTrials)*100.0)
          call write_cellcount(biomass, filename)
->>>>>>> dc5b77827fe6bf4a8d1927e9a3c14f7752702a75
       endif
 
       call cpu_time(start_update)
