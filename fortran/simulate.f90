@@ -2,8 +2,8 @@ module input
    implicit none
 
    ! Input file / Parameters
-   real,    parameter :: dt = 0.1/60.0 !time step (min)
-   real,    parameter :: final_time = 0.2*60.0 !minutes
+   real,    parameter :: dt = 0.7/60.0 !time step (min)
+   real,    parameter :: final_time = 14*60.0 !minutes
    integer, parameter :: NumTrials = floor(final_time / dt)
    real,    parameter :: c_bulk = 0.2 ! Concentration bulk substrate
    real,    parameter :: v_width = 17.0 !Voxel length
@@ -28,8 +28,19 @@ module input
    real,    parameter :: eps_mass = avg_mass_cell
    real,    parameter :: Zed = 0, Zeu = 0.001
    real,    parameter :: mu = 0.001 !Transfer coefficient
+   integer, parameter :: S_q = 10, S_s = 10 ! Substeps Concentration
+end
 
-   integer, parameter :: S_q = 1, S_s = 10 ! Substeps Concentration
+module variable
+   use input
+   implicit none
+
+   integer, dimension(v_count,2)       :: eps_count
+   real,    dimension(v_count,2)       :: eps_amount, pressure
+   real,    dimension(v_count,2+S_s)   :: c_s
+   real,    dimension(v_count,2+S_q)   :: c_q
+   real,    dimension(Nmax,v_count,2)  :: biomass
+   integer, dimension(Nmax,v_count,2)  :: up
 end
 
 program simulate
@@ -37,26 +48,18 @@ program simulate
    ! TODO Check correct timesteps. Updating of values should
    !      always refer to timestep 2
    use input
+   use variable
    implicit none
 
    ! Functions
    real, external :: avg
 
    ! Variables
-   real,    dimension(v_count)         :: prod_s, prod_q
-   integer, dimension(v_count,2)       :: eps_count
-   real,    dimension(v_count,2)       :: eps_amount, pressure
-   real,    dimension(v_count,2+S_s)   :: c_s
-   real,    dimension(v_count,2+S_q)   :: c_q
-   real,    dimension(Nmax,v_count,2)  :: biomass
-   integer, dimension(Nmax,v_count,2)  :: up
-   real, dimension(v_count) :: M
-
-   ! Loops
-   integer :: i, n ! Standard indexes for loop
-   real :: start, finish, start_update, finish_update, r, timer(9)
-   character(10) :: time
-   character(20) :: filename
+   real, dimension(v_count)   :: M
+   integer                    :: i, n ! Indexes for loop
+   real                       :: start, finish, start_update, finish_update, r, timer(9)
+   character(10)              :: time
+   character(20)              :: filename
 
    ! Initialize arrays
    c_s(:,:) = 0.0!c_bulk
@@ -70,11 +73,11 @@ program simulate
    timer(:) = 0.0
 
    ! Insert particles into biomass: 1-2 bacteria, 400-800 mass, inactive
-   !do i = 1, v_size(1)*v_size(2)
-   !   call random_number(r)
-   !   call biomass_append(i, 400.0 + r*400.0, 0, biomass, up)
-   !   biomass(:,i,1) = biomass(:,i,2)
-   !end do
+   do i = 1, v_size(1)*v_size(2)
+      call random_number(r)
+      call biomass_append(i, 400.0 + r*400.0, 0, biomass, up)
+      biomass(:,i,1) = biomass(:,i,2)
+   end do
 
    !!! CODE
    print*,"CODE START"
@@ -90,21 +93,26 @@ program simulate
    ! TODO Slow parts: 
    !  5 update_displacement
    do n = 1,NumTrials
+<<<<<<< HEAD
       if (mod(n,floor(NumTrials/10.0)) == 0 .OR. n == 1) then
          print*, floor((real(n)/real(NumTrials)*100.0))
          write (filename,"(A5,I2)") "data/", floor((real(n)/real(NumTrials)*100.0))
-         print*,filename
          filename = trim(filename)
-         print*,filename
          call write_concentration(c_s, filename)
+=======
+      if (mod(n,nint(NumTrials/10.0)) == 0 .OR. n==1) then
+         print*, nint(real(n)/real(NumTrials)*100.0)
+         write(filename,'(a5, i3)') "data/", nint(real(n)/real(NumTrials)*100.0)
+         call write_cellcount(biomass, filename)
+>>>>>>> dc5b77827fe6bf4a8d1927e9a3c14f7752702a75
       endif
 
-      !call cpu_time(start_update)
-      !do i = 1, v_count
-         !call update_eps(i, biomass, up, eps_amount, eps_count)
-      !enddo
-      !call cpu_time(finish_update)
-      !timer(1) = (finish_update - start_update) + timer(1)
+      call cpu_time(start_update)
+      do i = 1, v_count
+         call update_eps(i, biomass, up, eps_amount, eps_count)
+      enddo
+      call cpu_time(finish_update)
+      timer(1) = (finish_update - start_update) + timer(1)
 
       call cpu_time(start_update)
       do i = 1, v_count
@@ -114,47 +122,40 @@ program simulate
       call cpu_time(finish_update)
       timer(2) = (finish_update - start_update) + timer(2)
 
-      !call cpu_time(start_update)
-      !do i = 1, v_count
-         !call update_stochastics(i,c_q,biomass,up)
-      !enddo
-      !call cpu_time(finish_update)
-      !timer(3) = (finish_update - start_update) + timer(3)
+      call cpu_time(start_update)
+      do i = 1, v_count
+         call update_stochastics(i,c_q,biomass,up)
+      enddo
+      call cpu_time(finish_update)
+      timer(3) = (finish_update - start_update) + timer(3)
 
-      !call cpu_time(start_update)
-      !do i = 1, v_count
-         !call update_pressure(i, biomass, eps_count, pressure)
-      !enddo
-      !call cpu_time(finish_update)
-      !timer(4) = (finish_update - start_update) + timer(4)
+      call cpu_time(start_update)
+      do i = 1, v_count
+         call update_pressure(i, biomass, eps_count, pressure)
+      enddo
+      call cpu_time(finish_update)
+      timer(4) = (finish_update - start_update) + timer(4)
 
-      !call cpu_time(start_update)
-      !do i = 1, v_count
-      !   call update_displacement(i, pressure, biomass, eps_count,up)
-      !enddo
-      !call cpu_time(finish_update)
-      !timer(5) = (finish_update - start_update) + timer(5)
+      call cpu_time(start_update)
+      do i = 1, v_count
+         call update_displacement(i, pressure, biomass, eps_count,up)
+      enddo
+      call cpu_time(finish_update)
+      timer(5) = (finish_update - start_update) + timer(5)
 
-      !call cpu_time(start_update)
-      !do i = 1, v_count
-      !   call update_production_q(i, c_q, biomass, up, prod_q)
-      !enddo
-      !call cpu_time(finish_update)
-      !timer(7) = (finish_update - start_update) + timer(7)
 
       call cpu_time(start_update)
       call update_concentration_s(biomass, diff_s, c_s) !Substrate
       call cpu_time(finish_update)
       timer(8) = (finish_update - start_update) + timer(8)
 
-      !call cpu_time(start_update)
-      !do i = 1, v_count
-      !   call update_concentration(i, prod_q, diff_q, c_q) !QSM
-      !enddo
-      !call cpu_time(finish_update)
-      !timer(9) = (finish_update - start_update) + timer(9)
+      call cpu_time(start_update)
+      call update_concentration_q(biomass,up, diff_q, c_q) !QSM
+      call cpu_time(finish_update)
+      timer(9) = (finish_update - start_update) + timer(9)
 
       ! Insert the newly calculated concentrations
+      call cpu_time(start_update)
       c_s(:,1) = c_s(:,2)
       c_q(:,1) = c_q(:,2)
       biomass(:,:,1) = biomass(:,:,2)
@@ -171,6 +172,8 @@ program simulate
       eps_amount(9900:10000,:) = 0.0
       up(:,9900:10000,:) = 0.0
       pressure(9900:10000,:) = 0.0
+      call cpu_time(finish_update)
+      timer(7) = (finish_update - start_update) + timer(7)
    end do
 
    call cpu_time(finish)
@@ -209,6 +212,7 @@ program simulate
 end program simulate
 
 
+
 subroutine write_count(biomass, eps_count, filename)
    ! Easy scatter plot
    use input
@@ -234,6 +238,27 @@ subroutine write_count(biomass, eps_count, filename)
    enddo
 
    close(1)
+end
+
+subroutine write_cellcount(biomass, filename)
+   use input
+   implicit none
+
+   real, intent(in) :: biomass(Nmax, v_count, 2)
+   character(len=20) :: filename
+   integer :: sum=0, tsum=0, i,j, count
+
+   open(unit=1,file=filename,status='new')
+   do j=1,v_count
+      tsum=0
+      do i=1,Nmax
+         call mass2cell_count(biomass(i,j,1), count)
+         tsum = tsum + count
+      enddo
+      write(1,*) tsum
+      sum = sum + tsum
+   enddo
+   write(1,*) "total", sum
 end
 
 subroutine write_concentration(c, filename)
@@ -264,9 +289,6 @@ subroutine write_concentration(c, filename)
    close(1)
 end
 
-
-
-
 subroutine update_division(i, biomass, up)
    ! TODO Finish this
    use input
@@ -277,7 +299,6 @@ subroutine update_division(i, biomass, up)
    real :: randf
    real :: newmass
    integer :: j, count, newup
-
 
    do j = 1,Nmax
       if (biomass(j,i,1) > Mmax) then
@@ -465,25 +486,7 @@ subroutine update_mass(i, c_s, biomass)
    real, intent(in) :: c_s(v_count, 2+S_s)
    real, intent(out) :: biomass(Nmax,v_count,2)
 
-   biomass(:,i,2) = biomass(:,i,2) + dt*Ymax* ( c_s(i,2)/(Ks + c_s(i,2) ) - maintenance)*biomass(:,i,2)
-end
-
-subroutine update_production_q(i, c_q, biomass, up, prod_q)
-   ! Output the production of QSM in voxel i
-   use input !v_count,Nmax, Kq, Zqd, Zqu
-   implicit none
-
-   integer, intent(in)  :: i
-   real, intent(in)     :: c_q(v_count,2+S_q)
-   real, intent(in), dimension(Nmax,v_count,2) :: biomass
-   integer, intent(in), dimension(Nmax,v_count,2) :: up
-   real, intent(out)    :: prod_q(v_count)
-   integer :: count_up, count_down
-
-   call get_count_up(i,biomass,up,count_up)
-   call get_count_down(i,biomass,up,count_down)
-
-   prod_q(i) = Zqd*count_down + Zqu*count_up * c_q(i,1)/(Kq + c_q(i,1) )
+   biomass(:,i,2) = biomass(:,i,2) + dt*Ymax* ( Vmax*c_s(i,2)/(Ks + c_s(i,2) ) - maintenance)*biomass(:,i,2)
 end
 
 subroutine get_count_up(i,biomass,up,count_up)
@@ -614,21 +617,9 @@ subroutine probability_up2down(i, c_q, prob)
    prob = beta / (1 + gamma *c_q(i,1))
 end
 
-subroutine update_production_s(c_s, biomass, prod_s)
-   ! Calculate the new production of substrate and QSM
-   use input !Vmax, Ks, Nmax
-   implicit none
-
-   real, intent(in) :: c_s(v_count,2+S_s), biomass(Nmax, v_count, 2)
-   real, intent(out) :: prod_s(v_count)
-   real M(v_count)
-
-   M = sum(biomass(:,:,1), dim=1)
-   prod_s(:) = - Vmax* M(:) * c_s(:,1) / (Ks + c_s(:,1))
-end
 
 subroutine update_concentration_s(biomass,diff, c)
-   ! Updates conentration (Forward Euler step)
+   ! Updates conentration (Forward Euler step / IMEX)
    ! Input index, diffusion constant, voxel width, c before/after
    ! Output new concentration
    use input
@@ -661,36 +652,54 @@ subroutine update_concentration_s(biomass,diff, c)
                endif
             end if
          end do
+         if(c(i,2+s) < 0.0) c(i,2+s) = 0.0
       enddo
    enddo
    c(:,2) = c(:,2+S_s)
 end
 
-subroutine update_concentration_q(i, prod, diff, c)
+subroutine update_concentration_q(biomass, up, diff, c)
    ! Updates conentration (Forward Euler step)
    ! Input index, diffusion constant, voxel width, c before/after
    ! Output new concentration
    use input
    implicit none
-   integer, intent(in) :: i
-   real, dimension(v_count,2+S_q), intent(out) :: c
-   real, intent(in) :: prod(v_count), diff
-   integer :: j_list_neigh(6), j, k, s
-   
+   real,    dimension(Nmax,v_count,2), intent(in) :: biomass
+   integer, dimension(Nmax,v_count,2), intent(in) :: up
+   real,    intent(in) :: diff
+   real,    dimension(v_count,2+S_q), intent(out) :: c
+   real,    dimension(v_count) :: prod
+   integer :: j_list_neigh(6), i, j, k, s
+   integer :: count_up, count_down
+   !TODO Move count function before s-loop
+
    do s = 1, S_q ! Substeps
-      call get_index_neighbours(i, j_list_neigh)
-      do j = 1,6 !For every neighbour
-         k = j_list_neigh(j)
-         if ( k > 0 ) then
-            if (s == 1) then
-               c(i,3) = c(i,1) + dt/S_q * (c(k,1) - c(i,1)) *  diff/(v_width*v_width) + dt/S_q*prod(i)/(v_width**3)
-            else
-               c(i,2+s) = c(i,1+s) + dt/S_q*(c(k,1+s) - c(i,1+s)) *  diff/(v_width*v_width) + dt/S_q*prod(i)/(v_width**3)
+      c(:,2+s) = c(:,1+s)
+      
+      do i = 1,v_count
+         call get_count_up(i,biomass,up,count_up)
+         call get_count_down(i,biomass,up,count_down)
+         if (Kq == 0) then
+            prod(i) = Zqd*count_down + Zqu*count_up
+         else
+            prod(i) = Zqd*count_down + Zqu*count_up * c(i,1+s)/(Kq + c(i,1+s) )
+         endif
+   
+         call get_index_neighbours(i, j_list_neigh)
+         do j = 1,6 !For every neighbour
+            k = j_list_neigh(j)
+            if ( k > 0 ) then
+               if (s == 1) then
+                  c(i,3) = c(i,3) + dt/S_q * (c(k,1) - c(i,1)) *  diff/(v_width*v_width) + dt/S_q*prod(i)/(v_width**3)
+               else
+                  c(i,2+s) = c(i,2+s) + dt/S_q*(c(k,1+s) - c(i,1+s)) *  diff/(v_width*v_width) + dt/S_q*prod(i)/(v_width**3)
+               endif
             endif
-         end if
-      end do
+         enddo
+         if(c(i,2+s) < 0.0) c(i,2+s) = 0.0
+      enddo
    enddo
-   c(i,2) = c(i,2+S_q)
+   c(:,2) = c(:,2+S_q)
 end
 
 subroutine biomass_remove_random(i, biomass, mass, up, up_temp)
