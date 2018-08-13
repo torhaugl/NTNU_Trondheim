@@ -12,9 +12,9 @@ module input
    integer, parameter :: v_count = v_size(1) * v_size(2) * v_size(3)
    real,    parameter :: Vmax = 0.046 !Maximum substrate uptake
    real,    parameter :: Ks = 0.00234 ! Half-saturaton const (substrate uptake)
-   real,    parameter :: Zqd = 8.3, Zqu = 1230.0 !QSM production 
+   real,    parameter :: Zqd = 8.3, Zqu = 1230.0 !QSM production
    real,    parameter :: Kq = 10
-   real,    parameter :: Ymax = 0.444 
+   real,    parameter :: Ymax = 0.444
    real,    parameter :: maintenance = 0.006
    real,    parameter :: avg_mass_cell = 420.0
    real,    parameter :: density_cell = 290.0
@@ -90,17 +90,13 @@ program simulate
 
    ! TODO Updates independent of neighbours (all except concentration)
    !      can be calculated outside voxel loop
-   ! TODO Slow parts: 
+   ! TODO Slow parts:
    !  5 update_displacement
    do n = 1,NumTrials
       if (mod(n,floor(NumTrials/10.0)) == 0 .OR. n == 1) then
          print*, floor((real(n)/real(NumTrials)*100.0))
-         write (filename,"(A5,I2)") "data/", floor((real(n)/real(NumTrials)*100.0))
+         write (filename,"(A5,I0)") "data/", floor((real(n)/real(NumTrials)*100.0))
          filename = trim(filename)
-         call write_concentration(c_s, filename)
-      if (mod(n,nint(NumTrials/10.0)) == 0 .OR. n==1) then
-         print*, nint(real(n)/real(NumTrials)*100.0)
-         write(filename,'(a5, i3)') "data/", nint(real(n)/real(NumTrials)*100.0)
          call write_cellcount(biomass, filename)
       endif
 
@@ -331,7 +327,7 @@ subroutine update_pressure(i, biomass, eps_count, pressure)
 
    if (count >= pmax) then
       pressure(i,2) = real(pmax)
-   else 
+   else
       pressure(i,2) = real(count) / (real(pmax) - real(count))
    end if
 
@@ -354,7 +350,7 @@ subroutine update_displacement(i, pressure, biomass, eps_count, up)
 
 
    call get_count_particles(biomass(:,i,1), eps_count(i,1), count)
-   if (mu*pressure(i,1)*count < 1 ) return ! Save lots of time 
+   if (mu*pressure(i,1)*count < 1 ) return ! Save lots of time
 
    ! Calculate how many particles are displaced
 
@@ -389,7 +385,7 @@ subroutine update_displacement(i, pressure, biomass, eps_count, up)
          end if
       end do
 
-      
+
       do j =1,6
          k = j_list_neigh(j)
          if (pressure(i,1) > pressure(k,1) .AND. k > 0) then
@@ -397,7 +393,7 @@ subroutine update_displacement(i, pressure, biomass, eps_count, up)
          else
             P(j) = 0
          end if
-   
+
          if (j > 1) then ! Cumulative sum
             P(j) = P(j-1) + P(j)
          end if
@@ -421,16 +417,16 @@ subroutine update_displacement(i, pressure, biomass, eps_count, up)
          enddo
          call index2xyz(i,pos)
          call index2xyz(chosen,pos2)
-         !print*, "Displace (pos):", pos, "to", pos2 
-   
+         !print*, "Displace (pos):", pos, "to", pos2
+
          ! Choose particle type
          call random_number(rand)
          rand_int = 1 + floor(count * rand) ! 1 - count
          eps_displaced = (rand_int <= eps_count(i,1))
-   
+
          ! Remove and Append particles to neighbour
          if (eps_displaced) then
-            eps_count(i,2) = eps_count(i,2) - 1 
+            eps_count(i,2) = eps_count(i,2) - 1
             eps_count(chosen,2) = eps_count(chosen,2) + 1
          else !biomass displaced
             call biomass_remove_random(i,biomass,mass,up,up_temp)
@@ -540,7 +536,7 @@ subroutine get_count_particles(biomass_particle,eps_count_particle, count)
 end
 
 subroutine get_count_nonzero(arr, n)
-   ! Counts 
+   ! Counts
    use input !Nmax
    implicit none
 
@@ -569,7 +565,7 @@ subroutine update_stochastics(i, c_q, biomass, up)
 
       call probability_down2up(i,c_q,d2u)
       call probability_up2down(i,c_q,u2d)
-   
+
       ! Down -> Up
       count_d2u = 0
       do n=1,count_down
@@ -586,8 +582,8 @@ subroutine update_stochastics(i, c_q, biomass, up)
             count_u2d = count_u2d + 1
          end if
       end do
-   
-      up(j,i,2) = up(j,i,2) + (count_d2u-count_u2d) 
+
+      up(j,i,2) = up(j,i,2) + (count_d2u-count_u2d)
    enddo
 
 end
@@ -672,7 +668,7 @@ subroutine update_concentration_q(biomass, up, diff, c)
 
    do s = 1, S_q ! Substeps
       c(:,2+s) = c(:,1+s)
-      
+
       do i = 1,v_count
          call get_count_up(i,biomass,up,count_up)
          call get_count_down(i,biomass,up,count_down)
@@ -681,7 +677,7 @@ subroutine update_concentration_q(biomass, up, diff, c)
          else
             prod(i) = Zqd*count_down + Zqu*count_up * c(i,1+s)/(Kq + c(i,1+s) )
          endif
-   
+
          call get_index_neighbours(i, j_list_neigh)
          do j = 1,6 !For every neighbour
             k = j_list_neigh(j)
@@ -789,7 +785,7 @@ subroutine xyz2index(pos, i)
    z = pos(3)
 
    i = x + y * v_size(1) + z * v_size(1) * v_size(2) + 1
-   
+
    if ((i < 1) .OR. (i > v_size(1)*v_size(2)*v_size(3))) then
       print*, "Error, i<=0 or i > v_count",i,x,y,z
       i = 0
@@ -806,7 +802,7 @@ subroutine get_index_neighbours(i, i_list_neigh)
    integer :: pos(3), npos(3)
    i_list_neigh = (/0,0,0,0,0,0/)
 
-   call index2xyz(i,pos) 
+   call index2xyz(i,pos)
 
    ! x +- 1 (Boundary condition)
    npos = pos + (/1,0,0/)
