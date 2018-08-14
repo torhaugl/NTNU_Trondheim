@@ -8,10 +8,14 @@
 !  on quorom sensing molecules (QSM). QSM activates bacteria so
 !  that they produce much more EPS.
 !
-
+!
+!  input --
+!     Corresponds to an input file. Is used by many 
+!     subroutines to reduce the amount of arguments
+!     passed. Using this is also faster than passing.
+!
 module input
    implicit none
-   ! Input file
    real,    parameter :: dt            = 0.7/60.0 ! time step (min)
    real,    parameter :: final_time    = 14.0*60.0 ! minutes
    integer, parameter :: NumTrials     = floor(final_time / dt) ! #steps to finish calculation
@@ -44,8 +48,15 @@ module input
    integer, parameter :: S_q           = 10
    integer, parameter :: S_s           = 10 ! #Substeps for calculation of concentration
 end
-
-! TODO Implement use variable in more subroutines
+!
+!  variable --
+!     This module contains all variables that are changed
+!     during the timestep. This makes it easier to visualize
+!     which variables are available, and reduces arguments
+!     passed into subroutines.
+!
+!  TODO
+!     Implement use variable in more subroutines
 module variable
    use input
    implicit none
@@ -58,11 +69,14 @@ module variable
    real, dimension(9)                  :: timer ! Times total time of functions
    real :: curr_time
 end
-
+!
+!  simulate --
+!     This is the main program of the modeling project.
+!     It calculates N time-steps and writes them to file
+!     in the data/ folder.
 program simulate
-   ! Simulates time-steps
-   use input
-   use variable
+   use input      ! v_count, Nmax, diff_s, diff_q, v_size(3)
+   use Variable   ! all variables
    implicit none
 
    ! Functions
@@ -873,6 +887,8 @@ subroutine continuous_boundary_condition(pos_q, v_size_q)
       pos_q = 0
    end if
 end
+
+
 
 subroutine mass2cell_count(mass, count)
    use input
