@@ -56,6 +56,7 @@ module variable
    real,    dimension(Nmax,v_count,2)  :: biomass
    integer, dimension(Nmax,v_count,2)  :: up
    real, dimension(9)                  :: timer ! Times total time of functions
+   real :: curr_time
 end
 
 program simulate
@@ -75,6 +76,7 @@ program simulate
    character(20)              :: filename
 
    ! Initialize arrays
+   curr_time = 0.0
    c_s(:,:) = c_bulk
    c_q(:,:) = 0.0
    up(:,:,:) = 0
@@ -100,14 +102,59 @@ program simulate
 
    call cpu_time(start)
 
+! TODO Updates independent of neighbours (all except concentration)
+!      can be calculated outside voxel loop
    do n = 1,NumTrials
-      if (mod(n,nint(NumTrials/10.0)) == 0 .OR. n==1) then
-         print*, nint(real(n)/real(NumTrials)*100.0)
-         write(filename,'(a, i0)') "data/", nint(real(n)/real(NumTrials)*100.0)
-         call write_cellcount(biomass, filename)
+      ! Print
+      if (mod(n,floor(NumTrials/10.0)) == 0 .OR. n == 1) then
+         print*, floor((real(n)/real(NumTrials)*100.0))
+         write (filename,"(A5,I0,A4)") "data/", floor((real(n)/real(NumTrials)*100.0)), ".csv"
+         filename = trim(filename)
+         call write_all(filename)
       endif
 
-      call time_step()
+      ! Cheap calculation
+      call cpu_time(start_update)
+      do i = 1, v_count
+         call update_eps(i, biomass, up, eps_amount, eps_count)
+         call update_mass(i, c_s, biomass)
+         call update_division(i, biomass, up)
+         call update_stochastics(i,c_q,biomass,up)
+         call update_pressure(i, biomass, eps_count, pressure)
+         call update_displacement(i, pressure, biomass, eps_count,up)
+      enddo
+      call cpu_time(finish_update)
+      timer(1) = (finish_update - start_update) + timer(1)
+
+      ! Concentration (Expensive calculation)
+      call cpu_time(start_update)
+      call update_concentration_s(biomass, diff_s, c_s) !Substrate
+      call update_concentration_q(biomass,up, diff_q, c_q) !QSM
+      call cpu_time(finish_update)
+      timer(9) = (finish_update - start_update) + timer(9)
+
+      ! Insert the newly calculated concentrations
+      call cpu_time(start_update)
+      c_s(:,1) = c_s(:,2)
+      c_q(:,1) = c_q(:,2)
+      biomass(:,:,1) = biomass(:,:,2)
+      eps_count(:,1) = eps_count(:,2)
+      eps_amount(:,1) = eps_amount(:,2)
+      up(:,:,1) = up(:,:,2)
+      pressure(:,1) = pressure(:,2)
+
+      ! bulk
+      c_s(9900:10000,:) = c_bulk
+      c_q(9900:10000,:) = 0.0
+      biomass(:,9900:10000,:) = 0.0
+      eps_count(9900:10000,:) = 0.0
+      eps_amount(9900:10000,:) = 0.0
+      up(:,9900:10000,:) = 0.0
+      pressure(9900:10000,:) = 0.0
+      call cpu_time(finish_update)
+      timer(7) = (finish_update - start_update) + timer(7)
+
+      curr_time = curr_time + dt
    end do
 
    call cpu_time(finish)
@@ -133,103 +180,72 @@ program simulate
 
 
    ! Write to file
-   !filename = "conc_count2.dat"
-   !call write_count(biomass, eps_count, filename)
-   !filename = "conc_cq2.dat"
+   !filename = "data/conc_count2.dat"
+   !call write_count(filename)
+   !filename = "data/conc_cq2.dat"
    !call write_concentration(c_q, filename)
-   !filename = "conc_cs4.dat"
+   !filename = "data/conc_cs4.dat"
    !call write_concentration(c_s, filename)
    !print*, "Finished writing to *.dat files"
 
 
 end program simulate
 
+!!!!!!!!!!!!!!!
+! SUBROUTINES !
+!!!!!!!!!!!!!!!
 
-subroutine time_step()
-   ! TODO Updates independent of neighbours (all except concentration, displacement)
-   !      can be calculated outside voxel loop
+!  write_all --
+!     Outputs all important data to comma-separated values file (.csv)
+!     Each row corresponds to a unique voxel
+!     cs, cq, biomass, up, eps_count, eps_amount, pressure
+!
+!  Arguments:
+!     filename    A new file to write to
+!
+subroutine write_all(filename)
+   use input
+   use variable
+   use csv_file ! Module from FLIBS
+      ! csv_write( lun, value, advance)
+   implicit none
+
+   character(len=20) :: filename
+   integer :: pos(3), i
+   logical :: exist
+
+   open(1,file=filename,status="new",action="write")
+   write(1,*) "time,x,y,z,cs,cq,biomass,up,eps_count,eps_amount"
+
+   do i =1, v_count
+      call index2xyz(i,pos)
+
+      call csv_write(1,curr_time             ,.FALSE.)
+      call csv_write(1,pos(1)                ,.FALSE.)
+      call csv_write(1,pos(2)                ,.FALSE.)
+      call csv_write(1,pos(3)                ,.FALSE.)
+      call csv_write(1,c_s(i,1)              ,.FALSE.)
+      call csv_write(1,c_q(i,1)              ,.FALSE.)
+      call csv_write(1,sum(biomass(:,i,1))   ,.FALSE.)
+      call csv_write(1,sum(up(:,i,1))        ,.FALSE.)
+      call csv_write(1,eps_count(i,1)        ,.FALSE.)
+      call csv_write(1,eps_amount(i,1)       ,.TRUE.)
+   enddo
+   close(1)
+end
+
+!  write_count --
+!     Outputs the particle count to a filetype
+!     which is easy to 3D-scatter plot. Each particle
+!     is placed at a random position in the voxel.
+!
+!  Arguments:
+!     filename    A new file to write to
+!
+subroutine write_count(filename)
    use input
    use variable
    implicit none
-
-   integer :: i
-   real :: start_update, finish_update
-
-   call cpu_time(start_update)
-   do i = 1, v_count
-      call update_eps(i, biomass, up, eps_amount, eps_count)
-   enddo
-   call cpu_time(finish_update)
-   timer(1) = (finish_update - start_update) + timer(1)
-
-   call cpu_time(start_update)
-   do i = 1, v_count
-      call update_mass(i)
-      call update_division(i)
-   enddo
-   call cpu_time(finish_update)
-   timer(2) = (finish_update - start_update) + timer(2)
-
-   call cpu_time(start_update)
-   do i = 1, v_count
-      call update_stochastics(i)
-   enddo
-   call cpu_time(finish_update)
-   timer(3) = (finish_update - start_update) + timer(3)
-
-   call cpu_time(start_update)
-   do i = 1, v_count
-      call update_pressure(i, biomass, eps_count, pressure)
-   enddo
-   call cpu_time(finish_update)
-   timer(4) = (finish_update - start_update) + timer(4)
-
-   call cpu_time(start_update)
-   do i = 1, v_count
-      call update_displacement(i, pressure, biomass, eps_count,up)
-   enddo
-   call cpu_time(finish_update)
-   timer(5) = (finish_update - start_update) + timer(5)
-
-
-   call cpu_time(start_update)
-   call update_concentration_s(biomass, diff_s, c_s) !Substrate
-   call cpu_time(finish_update)
-   timer(8) = (finish_update - start_update) + timer(8)
-
-   call cpu_time(start_update)
-   call update_concentration_q(biomass,up, diff_q, c_q) !QSM
-   call cpu_time(finish_update)
-   timer(9) = (finish_update - start_update) + timer(9)
-
-   ! Insert the newly calculated concentrations
-   call cpu_time(start_update)
-   c_s(:,1) = c_s(:,2)
-   c_q(:,1) = c_q(:,2)
-   biomass(:,:,1) = biomass(:,:,2)
-   eps_count(:,1) = eps_count(:,2)
-   eps_amount(:,1) = eps_amount(:,2)
-   up(:,:,1) = up(:,:,2)
-   pressure(:,1) = pressure(:,2)
-
-   ! bulk
-   c_s(9900:10000,:) = c_bulk
-   c_q(9900:10000,:) = 0.0
-   biomass(:,9900,:) = 0.0
-   eps_count(9900:10000,:) = 0.0
-   eps_amount(9900:10000,:) = 0.0
-   up(:,9900:10000,:) = 0.0
-   pressure(9900:10000,:) = 0.0
-   call cpu_time(finish_update)
-   timer(7) = (finish_update - start_update) + timer(7)
-end
-
-subroutine write_count(biomass, eps_count, filename)
-   ! Easy scatter plot
-   use input
-   implicit none
-   real, intent(in) :: biomass(Nmax, v_count, 2)
-   integer, intent(in) :: eps_count(v_count, 2)
    integer :: i, count, pos(3), j
    character(len=20) :: filename
    real r(3)
@@ -237,7 +253,6 @@ subroutine write_count(biomass, eps_count, filename)
    open(unit=1, file=filename, status="new")
    do i = 1,v_count
       call index2xyz(i,pos)
-      !call mass2cell_count(sum( biomass(:,i,1) ), count )
       call get_count_particles(biomass(:,i,1), eps_count(i,1), count)
 
       do j = 1,count
@@ -344,7 +359,7 @@ subroutine update_pressure(i, biomass, eps_count, pressure)
 
    if (count >= pmax) then
       pressure(i,2) = real(pmax)
-   else 
+   else
       pressure(i,2) = real(count) / (real(pmax) - real(count))
    end if
 
@@ -367,7 +382,7 @@ subroutine update_displacement(i, pressure, biomass, eps_count, up)
 
 
    call get_count_particles(biomass(:,i,1), eps_count(i,1), count)
-   if (mu*pressure(i,1)*count < 1 ) return ! Save lots of time 
+   if (mu*pressure(i,1)*count < 1 ) return ! Save lots of time
 
    ! Calculate how many particles are displaced
 
@@ -402,7 +417,7 @@ subroutine update_displacement(i, pressure, biomass, eps_count, up)
          end if
       end do
 
-      
+
       do j =1,6
          k = j_list_neigh(j)
          if (pressure(i,1) > pressure(k,1) .AND. k > 0) then
@@ -410,7 +425,7 @@ subroutine update_displacement(i, pressure, biomass, eps_count, up)
          else
             P(j) = 0
          end if
-   
+
          if (j > 1) then ! Cumulative sum
             P(j) = P(j-1) + P(j)
          end if
@@ -434,16 +449,16 @@ subroutine update_displacement(i, pressure, biomass, eps_count, up)
          enddo
          call index2xyz(i,pos)
          call index2xyz(chosen,pos2)
-         !print*, "Displace (pos):", pos, "to", pos2 
-   
+         !print*, "Displace (pos):", pos, "to", pos2
+
          ! Choose particle type
          call random_number(rand)
          rand_int = 1 + floor(count * rand) ! 1 - count
          eps_displaced = (rand_int <= eps_count(i,1))
-   
+
          ! Remove and Append particles to neighbour
          if (eps_displaced) then
-            eps_count(i,2) = eps_count(i,2) - 1 
+            eps_count(i,2) = eps_count(i,2) - 1
             eps_count(chosen,2) = eps_count(chosen,2) + 1
          else !biomass displaced
             call biomass_remove_random(i,biomass,mass,up,up_temp)
@@ -548,7 +563,7 @@ subroutine get_count_particles(biomass_particle,eps_count_particle, count)
 end
 
 subroutine get_count_nonzero(arr, n)
-   ! Counts 
+   ! Counts
    use input !Nmax
    implicit none
 
@@ -593,8 +608,8 @@ subroutine update_stochastics(i)
             count_u2d = count_u2d + 1
          end if
       end do
-   
-      up(j,i,2) = up(j,i,2) + (count_d2u-count_u2d) 
+
+      up(j,i,2) = up(j,i,2) + (count_d2u-count_u2d)
    enddo
 
 end
@@ -679,7 +694,7 @@ subroutine update_concentration_q(biomass, up, diff, c)
 
    do s = 1, S_q ! Substeps
       c(:,2+s) = c(:,1+s)
-      
+
       do i = 1,v_count
          call get_count_up(i,count_up)
          call get_count_down(i,count_down)
@@ -688,7 +703,7 @@ subroutine update_concentration_q(biomass, up, diff, c)
          else
             prod(i) = Zqd*count_down + Zqu*count_up * c(i,1+s)/(Kq + c(i,1+s) )
          endif
-   
+
          call get_index_neighbours(i, j_list_neigh)
          do j = 1,6 !For every neighbour
             k = j_list_neigh(j)
@@ -796,7 +811,7 @@ subroutine xyz2index(pos, i)
    z = pos(3)
 
    i = x + y * v_size(1) + z * v_size(1) * v_size(2) + 1
-   
+
    if ((i < 1) .OR. (i > v_size(1)*v_size(2)*v_size(3))) then
       print*, "Error, i<=0 or i > v_count",i,x,y,z
       i = 0
@@ -813,7 +828,7 @@ subroutine get_index_neighbours(i, i_list_neigh)
    integer :: pos(3), npos(3)
    i_list_neigh = (/0,0,0,0,0,0/)
 
-   call index2xyz(i,pos) 
+   call index2xyz(i,pos)
 
    ! x +- 1 (Boundary condition)
    npos = pos + (/1,0,0/)

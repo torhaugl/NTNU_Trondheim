@@ -1,4 +1,5 @@
 __pycache__/
 data/
-a.out
-input.mod
+*.out
+*.mod
+*.o
