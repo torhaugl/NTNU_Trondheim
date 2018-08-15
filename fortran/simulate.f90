@@ -16,7 +16,7 @@
 !
 module input
    implicit none
-   real,    parameter :: dt            = 0.7/60.0                 ! time step (min)
+   real,    parameter :: dt            = 0.35/60.0                 ! time step (min)
    real,    parameter :: final_time    = 14.0*60.0                ! minutes
    integer, parameter :: NumTrials     = floor(final_time / dt)   ! #steps to finish calculation
    real,    parameter :: c_bulk        = 0.2                      ! Concentration bulk substrate
@@ -88,6 +88,7 @@ program simulate
    integer                    :: i_0, i_1 ! Indexes for bulk
    real                       :: r ! Random number
    real                       :: start, finish ! Total time taken
+   real                       :: start_update, finish_update
    character(10)              :: time ! Output time started in string
    character(20)              :: filename
 
@@ -127,7 +128,7 @@ program simulate
       ! Print
       if (mod(n,floor(NumTrials/100.0)) == 0 .OR. n == 1) then
          print*, floor((real(n)/real(NumTrials)*100.0))
-         write (filename,"(A5,I0,A4)") "data/", m, ".csv"
+         write (filename,"(A5,I0.3,A4)") "data/", m, ".csv"
          filename = trim(filename)
          call write_all(filename)
          m = m + 1
@@ -137,9 +138,9 @@ program simulate
       call cpu_time(start_update)
       do i = 1, v_count
          call update_eps(i, biomass, up, eps_amount, eps_count)
-         call update_mass(i, c_s, biomass)
-         call update_division(i, biomass, up)
-         call update_stochastics(i,c_q,biomass,up)
+         call update_mass(i)
+         call update_division(i)
+         call update_stochastics(i)
          call update_pressure(i, biomass, eps_count, pressure)
          call update_displacement(i, pressure, biomass, eps_count,up)
       enddo
@@ -185,8 +186,8 @@ program simulate
    print*,"Model time(min):", final_time
    print*, timer
    print*,
-   print*,"Top"   ,c_s(10000,1)  ,c_q(10000,1)  ,eps_amount(10000,1)
-   print*,"Mid"   ,c_s(5000,1)   ,c_q(5000,1)   ,eps_amount(5000,1)
+   print*,"Top"   ,c_s(i_0-1,1)  ,c_q(i_0-1,1)  ,eps_amount(i_0-1,1)
+   print*,"Mid"   ,c_s(i_1/2,1)   ,c_q(i_1/2,1)   ,eps_amount(i_1/2,1)
    print*,"Bot"   ,c_s(1,1)      ,c_q(1,1)      ,eps_amount(1,1)
    print*,"AVG"   ,avg(c_s(:,1)) ,avg(c_q(:,1)) ,avg(eps_amount(:,1))
    print*,"Bio"   ,biomass(:4,1,1)
