@@ -23,7 +23,7 @@ module input
    real,    parameter :: v_width       = 17.0                     ! Voxel length
    real,    parameter :: diff_s        = 40680.0
    real,    parameter :: diff_q        = 33300.0                  ! Diffusion substrate/QSM
-   integer, parameter :: v_size(3)     = (/10,10,100/)            ! Sife of 3D grid of voxels in x,y,z direction
+   integer, parameter :: v_size(3)     = (/10,10,50/)             ! Sife of 3D grid of voxels in x,y,z direction TODO 10x10x100
    integer, parameter :: v_count       = v_size(1) * v_size(2) * v_size(3) ! #voxels
    real,    parameter :: Vmax          = 0.046                    ! Maximum substrate uptake
    real,    parameter :: Ks            = 0.00234                  ! Half-saturaton const (substrate uptake)
@@ -53,7 +53,7 @@ end
 !     This module contains all variables that are changed
 !     during the timestep. This makes it easier to visualize
 !     which variables are available, and reduces arguments
-!     passed into subroutines.
+!     passed into subroutines. Also is a speed-up.
 !
 !  TODO
 !     Implement use variable in more subroutines
@@ -61,7 +61,8 @@ module variable
    use input
    implicit none
    integer, dimension(v_count,2)       :: eps_count
-   real,    dimension(v_count,2)       :: eps_amount, pressure
+   real,    dimension(v_count,2)       :: eps_amount
+   real,    dimension(v_count,2)       :: pressure
    real,    dimension(v_count,2+S_s)   :: c_s
    real,    dimension(v_count,2+S_q)   :: c_q
    real,    dimension(Nmax,v_count,2)  :: biomass
@@ -83,7 +84,8 @@ program simulate
    real, external :: avg
 
    ! Variables
-   integer                    :: i, n ! Indexes for loop
+   integer                    :: i, n, m ! Indexes for loop
+   integer                    :: i_0, i_1 ! Indexes for bulk
    real                       :: r ! Random number
    real                       :: start, finish ! Total time taken
    character(10)              :: time ! Output time started in string
@@ -99,6 +101,9 @@ program simulate
    eps_amount(:,:) = 0.0
    pressure(:,:) = 0.0
    timer(:) = 0.0
+   i_0 = v_count - v_size(1)*v_size(2)
+   i_1 = v_count
+   m = 0
 
    ! Insert particles into biomass: 1-2 bacteria, 400-800 mass, inactive
    do i = 1, v_size(1)*v_size(2)
@@ -122,9 +127,10 @@ program simulate
       ! Print
       if (mod(n,floor(NumTrials/100.0)) == 0 .OR. n == 1) then
          print*, floor((real(n)/real(NumTrials)*100.0))
-         write (filename,"(A5,I0,A4)") "data/", floor((real(n)/real(NumTrials)*100.0)), ".csv"
+         write (filename,"(A5,I0,A4)") "data/", m, ".csv"
          filename = trim(filename)
          call write_all(filename)
+         m = m + 1
       endif
 
       ! Cheap calculation
@@ -158,13 +164,13 @@ program simulate
       pressure(:,1) = pressure(:,2)
 
       ! bulk
-      c_s(9900:10000,:) = c_bulk
-      c_q(9900:10000,:) = 0.0
-      biomass(:,9900:10000,:) = 0.0
-      eps_count(9900:10000,:) = 0.0
-      eps_amount(9900:10000,:) = 0.0
-      up(:,9900:10000,:) = 0.0
-      pressure(9900:10000,:) = 0.0
+      c_s(i_0:i_1,:) = c_bulk
+      c_q(i_0:i_1,:) = 0.0
+      biomass(:,i_0:i_1,:) = 0.0
+      eps_count(i_0:i_1,:) = 0.0
+      eps_amount(i_0:i_1,:) = 0.0
+      up(:,i_0:i_1,:) = 0.0
+      pressure(i_0:i_1,:) = 0.0
       call cpu_time(finish_update)
       timer(7) = (finish_update - start_update) + timer(7)
 
