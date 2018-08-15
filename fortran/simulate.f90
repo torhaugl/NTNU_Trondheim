@@ -16,7 +16,7 @@
 !
 module input
    implicit none
-   real,    parameter :: dt            = 0.35/60.0                 ! time step (min)
+   real,    parameter :: dt            = 0.1/60.0                 ! time step (min)
    real,    parameter :: final_time    = 14.0*60.0                ! minutes
    integer, parameter :: NumTrials     = floor(final_time / dt)   ! #steps to finish calculation
    real,    parameter :: c_bulk        = 0.2                      ! Concentration bulk substrate
@@ -247,7 +247,7 @@ subroutine write_all(filename)
       call csv_write(1,pos(3)                ,.FALSE.)
       call csv_write(1,c_s(i,1)              ,.FALSE.)
       call csv_write(1,c_q(i,1)              ,.FALSE.)
-      call csv_write(1,sum(biomass(:,i,1))   ,.FALSE.)
+      call csv_write(1,sum(biomass(:,i,1))/avg_mass_cell   ,.FALSE.)
       call csv_write(1,sum(up(:,i,1))        ,.FALSE.)
       call csv_write(1,eps_count(i,1)        ,.FALSE.)
       call csv_write(1,eps_amount(i,1)       ,.TRUE.)
