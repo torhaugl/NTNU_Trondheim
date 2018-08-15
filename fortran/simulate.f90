@@ -10,43 +10,43 @@
 !
 !
 !  input --
-!     Corresponds to an input file. Is used by many 
+!     Corresponds to an input file. Is used by many
 !     subroutines to reduce the amount of arguments
 !     passed. Using this is also faster than passing.
 !
 module input
    implicit none
-   real,    parameter :: dt            = 0.7/60.0 ! time step (min)
-   real,    parameter :: final_time    = 14.0*60.0 ! minutes
-   integer, parameter :: NumTrials     = floor(final_time / dt) ! #steps to finish calculation
-   real,    parameter :: c_bulk        = 0.2 ! Concentration bulk substrate
-   real,    parameter :: v_width       = 17.0 ! Voxel length
+   real,    parameter :: dt            = 0.7/60.0                 ! time step (min)
+   real,    parameter :: final_time    = 14.0*60.0                ! minutes
+   integer, parameter :: NumTrials     = floor(final_time / dt)   ! #steps to finish calculation
+   real,    parameter :: c_bulk        = 0.2                      ! Concentration bulk substrate
+   real,    parameter :: v_width       = 17.0                     ! Voxel length
    real,    parameter :: diff_s        = 40680.0
-   real,    parameter :: diff_q        = 33300.0 ! Diffusion substrate/QSM
-   integer, parameter :: v_size(3)     = (/10,10,100/) ! Sife of 3D grid of voxels in x,y,z direction
+   real,    parameter :: diff_q        = 33300.0                  ! Diffusion substrate/QSM
+   integer, parameter :: v_size(3)     = (/10,10,100/)            ! Sife of 3D grid of voxels in x,y,z direction
    integer, parameter :: v_count       = v_size(1) * v_size(2) * v_size(3) ! #voxels
-   real,    parameter :: Vmax          = 0.046 !Maximum substrate uptake
-   real,    parameter :: Ks            = 0.00234 ! Half-saturaton const (substrate uptake)
+   real,    parameter :: Vmax          = 0.046                    ! Maximum substrate uptake
+   real,    parameter :: Ks            = 0.00234                  ! Half-saturaton const (substrate uptake)
    real,    parameter :: Zqd           = 8.3
-   real,    parameter :: Zqu           = 1230.0 !QSM production 
-   real,    parameter :: Kq            = 10.0 ! Half-saturation QSM
-   real,    parameter :: Ymax          = 0.444 ! Bacteria yield percentage
-   real,    parameter :: maintenance   = 0.006 ! Bacteria eating
-   real,    parameter :: avg_mass_cell = 420.0 ! Average mass of bacteria
-   real,    parameter :: density_cell  = 290.0 ! Density of bacteria
-   real,    parameter :: max_vol_frac  = 0.52 ! Volume fraction that can be occupied in voxel
-   real,    parameter :: Mmax          = 14700.0 ! Maximum mass per particle
+   real,    parameter :: Zqu           = 1230.0                   ! QSM production
+   real,    parameter :: Kq            = 10.0                     ! Half-saturation QSM
+   real,    parameter :: Ymax          = 0.444                    ! Bacteria yield percentage
+   real,    parameter :: maintenance   = 0.006                    ! Bacteria eating
+   real,    parameter :: avg_mass_cell = 420.0                    ! Average mass of bacteria
+   real,    parameter :: density_cell  = 290.0                    ! Density of bacteria
+   real,    parameter :: max_vol_frac  = 0.52                     ! Volume fraction that can be occupied in voxel
+   real,    parameter :: Mmax          = 14700.0                  ! Maximum mass per particle
    integer, parameter :: pmax          = floor(density_cell * max_vol_frac * v_width**3 / Mmax) ! Max #particle per particle
-   integer, parameter :: Nmax          = pmax ! Same as above, but used as length of arrays
-   real,    parameter :: alpha         = 1.33  ! Stochastic (down 2 up)
-   real,    parameter :: beta          = 10.0  ! Stochastic (up 2 down)
-   real,    parameter :: gamma         = 0.1   ! Stochastic (importance of QSM)
-   real,    parameter :: eps_mass      = avg_mass_cell ! Mass per EPS particle
+   integer, parameter :: Nmax          = pmax                     ! Same as above, but used as length of arrays
+   real,    parameter :: alpha         = 1.33                     ! Stochastic (down 2 up)
+   real,    parameter :: beta          = 10.0                     ! Stochastic (up 2 down)
+   real,    parameter :: gamma         = 0.1                      ! Stochastic (importance of QSM)
+   real,    parameter :: eps_mass      = avg_mass_cell            ! Mass per EPS particle
    real,    parameter :: Zed           = 0.0
-   real,    parameter :: Zeu           = 0.001 ! Production of EPS, (d)own/(u)p
-   real,    parameter :: mu            = 0.001 ! Transfer coefficient out of voxel
+   real,    parameter :: Zeu           = 0.001                    ! Production of EPS, (d)own/(u)p
+   real,    parameter :: mu            = 0.001                    ! Transfer coefficient out of voxel
    integer, parameter :: S_q           = 10
-   integer, parameter :: S_s           = 10 ! #Substeps for calculation of concentration
+   integer, parameter :: S_s           = 10                       ! #Substeps for calculation of concentration
 end
 !
 !  variable --
@@ -605,7 +605,7 @@ subroutine update_stochastics(i)
 
       call probability_down2up(i,d2u)
       call probability_up2down(i,u2d)
-   
+
       ! Down -> Up
       count_d2u = 0
       do n=1,count_down
