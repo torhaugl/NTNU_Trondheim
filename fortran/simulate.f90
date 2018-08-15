@@ -1,65 +1,92 @@
+!  Author:           NTNU Trondheim, iGEM 18
+!  Written by:       Haugland, Tor Strømsem
+!  Acknowledgements: Pettersen, Jakob
+!  Github:           torhaugl/NTNU_Trondheim
+!
+!  Program which simulates time-steps of a 3D grid of voxels to
+!  calculate biofilm (EPS) and growth of bacteria/cell depending
+!  on quorom sensing molecules (QSM). QSM activates bacteria so
+!  that they produce much more EPS.
+!
+!
+!  input --
+!     Corresponds to an input file. Is used by many 
+!     subroutines to reduce the amount of arguments
+!     passed. Using this is also faster than passing.
+!
 module input
    implicit none
-
-   ! Input file / Parameters
-   real,    parameter :: dt = 0.7/60.0 !time step (min)
-   real,    parameter :: final_time = 14*60.0 !minutes
-   integer, parameter :: NumTrials = floor(final_time / dt)
-   real,    parameter :: c_bulk = 0.2 ! Concentration bulk substrate
-   real,    parameter :: v_width = 17.0 !Voxel length
-   real,    parameter :: diff_s = 40680.0, diff_q = 33300.0 !Diffusion subst./QSM
-   integer, parameter :: v_size(3) = (/10,10,100/)
-   integer, parameter :: v_count = v_size(1) * v_size(2) * v_size(3)
-   real,    parameter :: Vmax = 0.046 !Maximum substrate uptake
-   real,    parameter :: Ks = 0.00234 ! Half-saturaton const (substrate uptake)
-   real,    parameter :: Zqd = 8.3, Zqu = 1230.0 !QSM production
-   real,    parameter :: Kq = 10
-   real,    parameter :: Ymax = 0.444
-   real,    parameter :: maintenance = 0.006
-   real,    parameter :: avg_mass_cell = 420.0
-   real,    parameter :: density_cell = 290.0
-   real,    parameter :: max_vol_frac = 0.52
-   real,    parameter :: Mmax = 14700.0
-   integer, parameter :: pmax = floor(density_cell * max_vol_frac * v_width**3 / Mmax) !Standard input: 50
-   integer, parameter :: Nmax = pmax
-   real,    parameter :: alpha = 1.33
-   real,    parameter :: beta = 10
-   real,    parameter :: gamma = 0.1
-   real,    parameter :: eps_mass = avg_mass_cell
-   real,    parameter :: Zed = 0, Zeu = 0.001
-   real,    parameter :: mu = 0.001 !Transfer coefficient
-   integer, parameter :: S_q = 10, S_s = 10 ! Substeps Concentration
+   real,    parameter :: dt            = 0.7/60.0 ! time step (min)
+   real,    parameter :: final_time    = 14.0*60.0 ! minutes
+   integer, parameter :: NumTrials     = floor(final_time / dt) ! #steps to finish calculation
+   real,    parameter :: c_bulk        = 0.2 ! Concentration bulk substrate
+   real,    parameter :: v_width       = 17.0 ! Voxel length
+   real,    parameter :: diff_s        = 40680.0
+   real,    parameter :: diff_q        = 33300.0 ! Diffusion substrate/QSM
+   integer, parameter :: v_size(3)     = (/10,10,100/) ! Sife of 3D grid of voxels in x,y,z direction
+   integer, parameter :: v_count       = v_size(1) * v_size(2) * v_size(3) ! #voxels
+   real,    parameter :: Vmax          = 0.046 !Maximum substrate uptake
+   real,    parameter :: Ks            = 0.00234 ! Half-saturaton const (substrate uptake)
+   real,    parameter :: Zqd           = 8.3
+   real,    parameter :: Zqu           = 1230.0 !QSM production 
+   real,    parameter :: Kq            = 10.0 ! Half-saturation QSM
+   real,    parameter :: Ymax          = 0.444 ! Bacteria yield percentage
+   real,    parameter :: maintenance   = 0.006 ! Bacteria eating
+   real,    parameter :: avg_mass_cell = 420.0 ! Average mass of bacteria
+   real,    parameter :: density_cell  = 290.0 ! Density of bacteria
+   real,    parameter :: max_vol_frac  = 0.52 ! Volume fraction that can be occupied in voxel
+   real,    parameter :: Mmax          = 14700.0 ! Maximum mass per particle
+   integer, parameter :: pmax          = floor(density_cell * max_vol_frac * v_width**3 / Mmax) ! Max #particle per particle
+   integer, parameter :: Nmax          = pmax ! Same as above, but used as length of arrays
+   real,    parameter :: alpha         = 1.33  ! Stochastic (down 2 up)
+   real,    parameter :: beta          = 10.0  ! Stochastic (up 2 down)
+   real,    parameter :: gamma         = 0.1   ! Stochastic (importance of QSM)
+   real,    parameter :: eps_mass      = avg_mass_cell ! Mass per EPS particle
+   real,    parameter :: Zed           = 0.0
+   real,    parameter :: Zeu           = 0.001 ! Production of EPS, (d)own/(u)p
+   real,    parameter :: mu            = 0.001 ! Transfer coefficient out of voxel
+   integer, parameter :: S_q           = 10
+   integer, parameter :: S_s           = 10 ! #Substeps for calculation of concentration
 end
-
+!
+!  variable --
+!     This module contains all variables that are changed
+!     during the timestep. This makes it easier to visualize
+!     which variables are available, and reduces arguments
+!     passed into subroutines.
+!
+!  TODO
+!     Implement use variable in more subroutines
 module variable
    use input
    implicit none
-
    integer, dimension(v_count,2)       :: eps_count
    real,    dimension(v_count,2)       :: eps_amount, pressure
    real,    dimension(v_count,2+S_s)   :: c_s
    real,    dimension(v_count,2+S_q)   :: c_q
    real,    dimension(Nmax,v_count,2)  :: biomass
    integer, dimension(Nmax,v_count,2)  :: up
+   real, dimension(9)                  :: timer ! Times total time of functions
    real :: curr_time
 end
-
+!
+!  simulate --
+!     This is the main program of the modeling project.
+!     It calculates N time-steps and writes them to file
+!     in the data/ folder.
 program simulate
-   ! Simulates time-steps
-   ! TODO Check correct timesteps. Updating of values should
-   !      always refer to timestep 2
-   use input
-   use variable
+   use input      ! v_count, Nmax, diff_s, diff_q, v_size(3)
+   use Variable   ! all variables
    implicit none
 
    ! Functions
    real, external :: avg
 
    ! Variables
-   real, dimension(v_count)   :: M
    integer                    :: i, n ! Indexes for loop
-   real                       :: start, finish, start_update, finish_update, r, timer(9)
-   character(10)              :: time
+   real                       :: r ! Random number
+   real                       :: start, finish ! Total time taken
+   character(10)              :: time ! Output time started in string
    character(20)              :: filename
 
    ! Initialize arrays
@@ -158,9 +185,9 @@ program simulate
    print*,"AVG"   ,avg(c_s(:,1)) ,avg(c_q(:,1)) ,avg(eps_amount(:,1))
    print*,"Bio"   ,biomass(:4,1,1)
    print*,"upp"   ,up(:4,1,1)
-   call get_count_up(1,biomass,up,i)
+   call get_count_up(1,i)
    print*,"Up:"   ,i
-   call get_count_down(1,biomass,up,i)
+   call get_count_down(1,i)
    print*,"Dow"   ,i
    call get_count_particles(biomass(:,1,1),eps_count(1,1),i)
    print*,"Par"   ,i
@@ -302,13 +329,12 @@ subroutine write_concentration(c, filename)
    close(1)
 end
 
-subroutine update_division(i, biomass, up)
+subroutine update_division(i)
    ! TODO Finish this
    use input
+   use variable !biomass
    implicit none
    integer, intent(in) :: i
-   real, intent(out) :: biomass(Nmax,v_count,2)
-   integer, intent(out) ::up(Nmax,v_count,2)
    real :: randf
    real :: newmass
    integer :: j, count, newup
@@ -468,7 +494,6 @@ end
 
 subroutine update_eps(i, biomass, up, eps_amount, eps_count)
    ! Calculate new eps. Create particle if eps > eps_mass
-   ! TODO Check total particle count (Pressure?)
    use input !v_count Nmax Zed Zeu eps_mass
    implicit none
 
@@ -479,37 +504,34 @@ subroutine update_eps(i, biomass, up, eps_amount, eps_count)
    integer, intent(out) :: eps_count(v_count,2)
    integer :: count_up, count_down
 
-   call get_count_up(i,biomass,up,count_up)
-   call get_count_down(i,biomass,up,count_down)
+   call get_count_up(i,count_up)
+   call get_count_down(i,count_down)
 
    eps_amount(i,2) = eps_amount(i,2) + Zed*count_down + Zeu*count_up
 
    if (eps_amount(i,2) >= eps_mass) then
       eps_amount(i,2) = eps_amount(i,2) - eps_mass
       eps_count(i,2) = eps_count(i,2) + 1
-
    end if
 end
 
-subroutine update_mass(i, c_s, biomass)
+subroutine update_mass(i)
    use input !v_count Nmax Ymax, Ks, Vmax, m, dt
+   use variable !c_s, biomass
    implicit none
 
    integer, intent(in) :: i
-   real, intent(in) :: c_s(v_count, 2+S_s)
-   real, intent(out) :: biomass(Nmax,v_count,2)
 
    biomass(:,i,2) = biomass(:,i,2) + dt*Ymax* ( Vmax*c_s(i,2)/(Ks + c_s(i,2) ) - maintenance)*biomass(:,i,2)
 end
 
-subroutine get_count_up(i,biomass,up,count_up)
+subroutine get_count_up(i,count_up)
    ! TODO Worth it?
    use input
+   use variable
    implicit none
 
    integer, intent(in) :: i
-   real, intent(in) :: biomass(Nmax,v_count,2)
-   integer, intent(in) :: up(Nmax,v_count,2)
    integer, intent(out) :: count_up
    integer :: count,j
    real :: M
@@ -521,14 +543,13 @@ subroutine get_count_up(i,biomass,up,count_up)
 
 end
 
-subroutine get_count_down(i,biomass,up,count_down)
+subroutine get_count_down(i,count_down)
    ! TODO Worth it?
    use input
+   use variable
    implicit none
 
    integer, intent(in) :: i
-   real, intent(in) :: biomass(Nmax,v_count,2)
-   integer, intent(in) :: up(Nmax,v_count,2)
    integer, intent(out) :: count_down
    integer :: count,j
    real :: M=0 !Tot mass in voxel
@@ -542,7 +563,7 @@ end
 
 subroutine get_count_particles(biomass_particle,eps_count_particle, count)
    ! TODO Worth it?
-   ! Particle count in voxel! Misused as count in particle
+   ! Particle count in voxel!
    ! Nonzero entries in biomass_particle are a particle
    use input
    implicit none
@@ -567,14 +588,13 @@ subroutine get_count_nonzero(arr, n)
    n = count(arr .NE. 0)
 end
 
-subroutine update_stochastics(i, c_q, biomass, up)
+subroutine update_stochastics(i)
    !TODO error due to up(j,i,1), j is not correct
    use input !v_count, dt
+   use variable !c_q, biomass, up
    implicit none
 
    integer, intent(in)  :: i
-   real,    intent(in)  :: c_q(v_count,2+S_q), biomass(Nmax,v_count,2)
-   integer, intent(out) :: up(Nmax,v_count,2)
    real :: d2u, u2d, rand
    integer :: count_up, count_down,count, count_d2u, count_u2d,n,j
 
@@ -583,9 +603,9 @@ subroutine update_stochastics(i, c_q, biomass, up)
       call mass2cell_count(biomass(j,i,1), count)
       count_down = count - count_up
 
-      call probability_down2up(i,c_q,d2u)
-      call probability_up2down(i,c_q,u2d)
-
+      call probability_down2up(i,d2u)
+      call probability_up2down(i,u2d)
+   
       ! Down -> Up
       count_d2u = 0
       do n=1,count_down
@@ -608,30 +628,30 @@ subroutine update_stochastics(i, c_q, biomass, up)
 
 end
 
-subroutine probability_down2up(i, c_q, prob)
+subroutine probability_down2up(i, prob)
    ! Calculates probability down to up
    use input !v_count, alpha, gamma
+   use variable !c_q
    implicit none
    integer, intent(in) :: i
-   real, intent(in) :: c_q(v_count,2+S_q)
    real, intent(out) :: prob
 
    prob = alpha*c_q(i,1) / (1 + gamma *c_q(i,1))
 end
 
-subroutine probability_up2down(i, c_q, prob)
+subroutine probability_up2down(i, prob)
    ! Calculates probability down to up
    use input !v_count, beta, gamma
+   use variable
    implicit none
    integer, intent(in) :: i
-   real, intent(in) :: c_q(v_count,2+S_q)
    real, intent(out) :: prob
 
    prob = beta / (1 + gamma *c_q(i,1))
 end
 
 
-subroutine update_concentration_s(biomass,diff, c)
+subroutine update_concentration_s(biomass, diff, c)
    ! Updates conentration (Forward Euler step / IMEX)
    ! Input index, diffusion constant, voxel width, c before/after
    ! Output new concentration
@@ -690,8 +710,8 @@ subroutine update_concentration_q(biomass, up, diff, c)
       c(:,2+s) = c(:,1+s)
 
       do i = 1,v_count
-         call get_count_up(i,biomass,up,count_up)
-         call get_count_down(i,biomass,up,count_down)
+         call get_count_up(i,count_up)
+         call get_count_down(i,count_down)
          if (Kq == 0) then
             prod(i) = Zqd*count_down + Zqu*count_up
          else
@@ -867,6 +887,8 @@ subroutine continuous_boundary_condition(pos_q, v_size_q)
       pos_q = 0
    end if
 end
+
+
 
 subroutine mass2cell_count(mass, count)
    use input

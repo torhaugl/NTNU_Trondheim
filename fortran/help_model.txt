@@ -1,0 +1,54 @@
+I'm interested in implementing a Runge-Kutta 4 integration scheme instead of the forward-Euler scheme used now. 
+https://en.wikipedia.org/wiki/Runge-Kutta_methods
+https://www.calvin.edu/~scofield/courses/m231/materials/rungeKuttaFormulas.pdf
+
+Important to know:
+Integration scheme is in simulate.f90, the subroutine to be optimized is update_concentration_q, where the variable to be optimized is the
+concentration. Currently the concentration is calculated with many substeps to
+speed up code. Remember that this is a n-equation, 1st order system when
+implementing RK4.
+
+ 
+
+
+TODO The code can be written in a standalone textfile. If you are comfortable
+with git you can also fork and write the subroutine in simulate.f90, then I will merge the code when it's finished. Write a subroutine which calculates the concentration after time-step via RK4. i.e.
+
+subroutine update_c_rk():
+	use input ! Array size(integer): v_size, 
+	use variable ! Concentration(real, dimension(v_count,2)): c_q
+	implicit none ! In all Fortran codes
+	
+	... (to be coded)
+	c_q(:,2) = ... ! The newly calculated concentration
+end subroutine
+
+
+!Global Variables:
+!concentration_array = c
+!time_step = dt
+!
+!Subroutine:
+!calculate_dcdt(dcdt) # Return dcdt with size v_size, time-derivative of c
+
+
+
+Basic fortran:
+Comments with '!'
+
+Arrays are 1-indexed, let a = (/ 0.1, 0.2, 0.3/)
+a(0) error, a(1) = 0.1, etc.
+All variables must be specified before use, including arguments in subroutines
+real :: x 	! Real number
+integer :: y	! Integer
+real, dimension(2,3) :: z ! Matrix with dimension (2,3) with real numbers
+
+
+To call a subroutine, use
+call name_of_subroutine(arguments)
+Subroutines do not return values, but they can overwrite arguments.
+
+for loop:
+do i=1,n
+	...
+enddo
