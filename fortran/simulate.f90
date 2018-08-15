@@ -337,14 +337,13 @@ subroutine write_concentration(c, filename)
 end
 
 subroutine update_division(i)
-   ! TODO Finish this
    use input
    use variable !biomass
    implicit none
    integer, intent(in) :: i
-   real :: randf
+   real :: randf, r
    real :: newmass
-   integer :: j, count, newup
+   integer :: n, j, count, newup
 
    do j = 1,Nmax
       if (biomass(j,i,1) > Mmax) then
@@ -357,11 +356,20 @@ subroutine update_division(i)
 
 
          ! Up cells hypergeometric distribution
+         newup = 0
          call mass2cell_count(biomass(j,i,1), count)
+         do n=1,up(j,i,1)
+            call random_number(r)
+            if ( r < real(up(j,i,1)) / real(count)) then
+               up(j,i,1) = up(j,i,1) - 1
+               newup = newup + 1
+            endif
+            count = count - 1
+         enddo
          ! ...
 
          ! call biomass_append(....)
-         call biomass_append(i, newmass, 0, biomass, up)
+         call biomass_append(i, newmass, newup, biomass, up)
       endif
    enddo
 end
