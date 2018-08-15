@@ -93,7 +93,7 @@ program simulate
 !      can be calculated outside voxel loop
    do n = 1,NumTrials
       ! Print
-      if (mod(n,floor(NumTrials/10.0)) == 0 .OR. n == 1) then
+      if (mod(n,floor(NumTrials/100.0)) == 0 .OR. n == 1) then
          print*, floor((real(n)/real(NumTrials)*100.0))
          write (filename,"(A5,I0,A4)") "data/", floor((real(n)/real(NumTrials)*100.0)), ".csv"
          filename = trim(filename)
