@@ -31,7 +31,7 @@ module input
    real,    parameter :: Zqu           = 1230.0                   ! QSM production
    real,    parameter :: Kq            = 10.0                     ! Half-saturation QSM
    real,    parameter :: Ymax          = 0.444                    ! Bacteria yield percentage
-   real,    parameter :: maintenance   = 0.006                    ! Bacteria eating
+   real,    parameter :: maintenance   = 0.0006                    ! Bacteria eating
    real,    parameter :: avg_mass_cell = 420.0                    ! Average mass of bacteria
    real,    parameter :: density_cell  = 290.0                    ! Density of bacteria
    real,    parameter :: max_vol_frac  = 0.52                     ! Volume fraction that can be occupied in voxel
