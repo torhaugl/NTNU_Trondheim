@@ -16,7 +16,7 @@
 !
 module input
    implicit none
-   real,    parameter :: dt            = 0.1/60.0                 ! time step (min)
+   real,    parameter :: dt            = 0.7/60.0                 ! time step (min)
    real,    parameter :: final_time    = 14.0*60.0                ! minutes
    integer, parameter :: NumTrials     = floor(final_time / dt)   ! #steps to finish calculation
    real,    parameter :: c_bulk        = 0.2                      ! Concentration bulk substrate
@@ -232,25 +232,31 @@ subroutine write_all(filename)
    implicit none
 
    character(len=20) :: filename
-   integer :: pos(3), i
+   integer :: i, j
+   integer :: pos(3), cellcount, tempcount
    logical :: exist
 
    open(1,file=filename,status="new",action="write")
-   write(1,*) "time,x,y,z,cs,cq,biomass,up,eps_count,eps_amount"
+   write(1,*) "time,x,y,z,cs,cq,cellcount,up,eps_count,eps_amount"
 
-   do i =1, v_count
+   do i = 1, v_count
       call index2xyz(i,pos)
+      cellcount = 0
+      do j = 1, Nmax
+         call mass2cell_count(biomass(j,i,1), tempcount)
+         cellcount = cellcount + tempcount
+      enddo
 
-      call csv_write(1,curr_time             ,.FALSE.)
-      call csv_write(1,pos(1)                ,.FALSE.)
-      call csv_write(1,pos(2)                ,.FALSE.)
-      call csv_write(1,pos(3)                ,.FALSE.)
-      call csv_write(1,c_s(i,1)              ,.FALSE.)
-      call csv_write(1,c_q(i,1)              ,.FALSE.)
-      call csv_write(1,sum(biomass(:,i,1))/avg_mass_cell   ,.FALSE.)
-      call csv_write(1,sum(up(:,i,1))        ,.FALSE.)
-      call csv_write(1,eps_count(i,1)        ,.FALSE.)
-      call csv_write(1,eps_amount(i,1)       ,.TRUE.)
+      call csv_write(1, curr_time            ,.FALSE.)
+      call csv_write(1, pos(1)               ,.FALSE.)
+      call csv_write(1, pos(2)               ,.FALSE.)
+      call csv_write(1, pos(3)               ,.FALSE.)
+      call csv_write(1, c_s(i,1)             ,.FALSE.)
+      call csv_write(1, c_q(i,1)             ,.FALSE.)
+      call csv_write(1, cellcount            ,.FALSE.)
+      call csv_write(1, sum(up(:,i,1))       ,.FALSE.)
+      call csv_write(1, eps_count(i,1)       ,.FALSE.)
+      call csv_write(1, eps_amount(i,1)      ,.TRUE.)
    enddo
    close(1)
 end
@@ -534,7 +540,6 @@ subroutine update_mass(i)
    use input !v_count Nmax Ymax, Ks, Vmax, m, dt
    use variable !c_s, biomass
    implicit none
-
    integer, intent(in) :: i
 
    biomass(:,i,2) = biomass(:,i,2) + dt*Ymax* ( Vmax*c_s(i,2)/(Ks + c_s(i,2) ) - maintenance)*biomass(:,i,2)
