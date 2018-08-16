@@ -4,3 +4,4 @@ data/
 *.mod
 *.o
 .*
+*.exe
