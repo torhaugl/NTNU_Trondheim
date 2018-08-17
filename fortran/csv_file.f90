@@ -207,28 +207,112 @@ end subroutine csv_write_char
 subroutine csv_write_integer_1d( lun, array, advance )
     integer, dimension(:), intent(in)   :: array
 
-    include 'csv_file_1d.f90'
+! cvs_file_1d.f90 --
+!     Include file for csv_file.f90:
+!     contains the body of the one-dimensional version of the
+!     writing routines.
+!
+!     $Id: csv_file_1d.f90,v 1.2 2006/03/26 19:03:53 arjenmarkus Exp $
+!
+    integer, intent(in)                 :: lun
+    logical, intent(in), optional       :: advance
+
+    logical                             :: adv
+    integer                             :: i
+
+    adv = .true.
+    if ( present(advance) ) adv = advance
+
+    do i = 1,size(array)-1
+        call csv_write( lun, array(i), .false. )
+    enddo
+    call csv_write( lun, array(size(array)), adv )
+!
+! end of body
 
 end subroutine csv_write_integer_1d
 
 subroutine csv_write_real_1d( lun, array, advance )
     real, dimension(:), intent(in)   :: array
 
-    include 'csv_file_1d.f90'
+! cvs_file_1d.f90 --
+!     Include file for csv_file.f90:
+!     contains the body of the one-dimensional version of the
+!     writing routines.
+!
+!     $Id: csv_file_1d.f90,v 1.2 2006/03/26 19:03:53 arjenmarkus Exp $
+!
+    integer, intent(in)                 :: lun
+    logical, intent(in), optional       :: advance
+
+    logical                             :: adv
+    integer                             :: i
+
+    adv = .true.
+    if ( present(advance) ) adv = advance
+
+    do i = 1,size(array)-1
+        call csv_write( lun, array(i), .false. )
+    enddo
+    call csv_write( lun, array(size(array)), adv )
+!
+! end of body
 
 end subroutine csv_write_real_1d
 
 subroutine csv_write_dble_1d( lun, array, advance )
     real(kind=kind(1.0d0)), dimension(:), intent(in)   :: array
 
-    include 'csv_file_1d.f90'
+! cvs_file_1d.f90 --
+!     Include file for csv_file.f90:
+!     contains the body of the one-dimensional version of the
+!     writing routines.
+!
+!     $Id: csv_file_1d.f90,v 1.2 2006/03/26 19:03:53 arjenmarkus Exp $
+!
+    integer, intent(in)                 :: lun
+    logical, intent(in), optional       :: advance
+
+    logical                             :: adv
+    integer                             :: i
+
+    adv = .true.
+    if ( present(advance) ) adv = advance
+
+    do i = 1,size(array)-1
+        call csv_write( lun, array(i), .false. )
+    enddo
+    call csv_write( lun, array(size(array)), adv )
+!
+! end of body
 
 end subroutine csv_write_dble_1d
 
 subroutine csv_write_char_1d( lun, array, advance )
     character(len=*), dimension(:), intent(in)   :: array
 
-    include 'csv_file_1d.f90'
+! cvs_file_1d.f90 --
+!     Include file for csv_file.f90:
+!     contains the body of the one-dimensional version of the
+!     writing routines.
+!
+!     $Id: csv_file_1d.f90,v 1.2 2006/03/26 19:03:53 arjenmarkus Exp $
+!
+    integer, intent(in)                 :: lun
+    logical, intent(in), optional       :: advance
+
+    logical                             :: adv
+    integer                             :: i
+
+    adv = .true.
+    if ( present(advance) ) adv = advance
+
+    do i = 1,size(array)-1
+        call csv_write( lun, array(i), .false. )
+    enddo
+    call csv_write( lun, array(size(array)), adv )
+!
+! end of body
 
 end subroutine csv_write_char_1d
 
@@ -246,28 +330,100 @@ end subroutine csv_write_char_1d
 subroutine csv_write_integer_2d( lun, array )
     integer, dimension(:,:), intent(in)   :: array
 
-    include 'csv_file_2d.f90'
+! cvs_file_2d.f90 --
+!     Include file for csv_file.f90:
+!     contains the body of the two-dimensional version of the
+!     writing routines.
+!
+!     $Id: csv_file_2d.f90,v 1.2 2006/03/26 19:03:53 arjenmarkus Exp $
+!
+    integer, intent(in)                 :: lun
+
+    logical                             :: adv
+    integer                             :: i
+
+    adv = .true.
+
+    do i = 1,size(array,2)
+        call csv_write( lun, array(:,i), adv )
+    enddo
+!
+! end of body
 
 end subroutine csv_write_integer_2d
 
 subroutine csv_write_real_2d( lun, array )
     real, dimension(:,:), intent(in)   :: array
 
-    include 'csv_file_2d.f90'
+! cvs_file_2d.f90 --
+!     Include file for csv_file.f90:
+!     contains the body of the two-dimensional version of the
+!     writing routines.
+!
+!     $Id: csv_file_2d.f90,v 1.2 2006/03/26 19:03:53 arjenmarkus Exp $
+!
+    integer, intent(in)                 :: lun
+
+    logical                             :: adv
+    integer                             :: i
+
+    adv = .true.
+
+    do i = 1,size(array,2)
+        call csv_write( lun, array(:,i), adv )
+    enddo
+!
+! end of body
 
 end subroutine csv_write_real_2d
 
 subroutine csv_write_dble_2d( lun, array )
     real(kind=kind(1.0d0)), dimension(:,:), intent(in)   :: array
 
-    include 'csv_file_2d.f90'
+! cvs_file_2d.f90 --
+!     Include file for csv_file.f90:
+!     contains the body of the two-dimensional version of the
+!     writing routines.
+!
+!     $Id: csv_file_2d.f90,v 1.2 2006/03/26 19:03:53 arjenmarkus Exp $
+!
+    integer, intent(in)                 :: lun
+
+    logical                             :: adv
+    integer                             :: i
+
+    adv = .true.
+
+    do i = 1,size(array,2)
+        call csv_write( lun, array(:,i), adv )
+    enddo
+!
+! end of body
 
 end subroutine csv_write_dble_2d
 
 subroutine csv_write_char_2d( lun, array )
     character(len=*), dimension(:,:), intent(in)   :: array
 
-    include 'csv_file_2d.f90'
+! cvs_file_2d.f90 --
+!     Include file for csv_file.f90:
+!     contains the body of the two-dimensional version of the
+!     writing routines.
+!
+!     $Id: csv_file_2d.f90,v 1.2 2006/03/26 19:03:53 arjenmarkus Exp $
+!
+    integer, intent(in)                 :: lun
+
+    logical                             :: adv
+    integer                             :: i
+
+    adv = .true.
+
+    do i = 1,size(array,2)
+        call csv_write( lun, array(:,i), adv )
+    enddo
+!
+! end of body
 
 end subroutine csv_write_char_2d
 
