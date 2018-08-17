@@ -14,4 +14,3 @@ cd data
 ./sum.sh &&
 ./plot.gnuplot
 mv *.png ../
-cd ../../..
