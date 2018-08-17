@@ -16,14 +16,14 @@
 !
 module input
    implicit none
-   real,    parameter :: dt            = 0.7/60.0                 ! time step (min)
-   real,    parameter :: final_time    = 14.0*60.0                ! minutes
+   real,    parameter :: dt            = 0.5/60.0                 ! time step (min)
+   real,    parameter :: final_time    = 3*60.0                ! minutes
    integer, parameter :: NumTrials     = floor(final_time / dt)   ! #steps to finish calculation
    real,    parameter :: c_bulk        = 0.2                      ! Concentration bulk substrate
    real,    parameter :: v_width       = 17.0                     ! Voxel length
    real,    parameter :: diff_s        = 40680.0
    real,    parameter :: diff_q        = 33300.0                  ! Diffusion substrate/QSM
-   integer, parameter :: v_size(3)     = (/10,10,50/)             ! Sife of 3D grid of voxels in x,y,z direction TODO 10x10x100
+   integer, parameter :: v_size(3)     = (/10,10,100/)            ! Sife of 3D grid of voxels in x,y,z direction
    integer, parameter :: v_count       = v_size(1) * v_size(2) * v_size(3) ! #voxels
    real,    parameter :: Vmax          = 0.046                    ! Maximum substrate uptake
    real,    parameter :: Ks            = 0.00234                  ! Half-saturaton const (substrate uptake)
@@ -31,7 +31,7 @@ module input
    real,    parameter :: Zqu           = 1230.0                   ! QSM production
    real,    parameter :: Kq            = 10.0                     ! Half-saturation QSM
    real,    parameter :: Ymax          = 0.444                    ! Bacteria yield percentage
-   real,    parameter :: maintenance   = 0.0006                    ! Bacteria eating
+   real,    parameter :: maintenance   = 0.0006                   ! Bacteria eating
    real,    parameter :: avg_mass_cell = 420.0                    ! Average mass of bacteria
    real,    parameter :: density_cell  = 290.0                    ! Density of bacteria
    real,    parameter :: max_vol_frac  = 0.52                     ! Volume fraction that can be occupied in voxel
@@ -46,7 +46,7 @@ module input
    real,    parameter :: Zeu           = 0.001                    ! Production of EPS, (d)own/(u)p
    real,    parameter :: mu            = 0.001                    ! Transfer coefficient out of voxel
    integer, parameter :: S_q           = 10
-   integer, parameter :: S_s           = 10                       ! #Substeps for calculation of concentration
+   integer, parameter :: S_s           = 12                       ! #Substeps for calculation of concentration
 end
 !
 !  variable --
@@ -108,10 +108,12 @@ program simulate
 
    ! Insert particles into biomass: 1-2 bacteria, 400-800 mass, inactive
    do i = 1, v_size(1)*v_size(2)
-      call random_number(r)
-      call biomass_append(i, 400.0 + r*400.0, 0, biomass, up)
-      biomass(:,i,1) = biomass(:,i,2)
-   end do
+      do n = 1, 10
+         call random_number(r)
+         call biomass_append(i, 400.0 + r*400.0, 0, biomass, up)
+         biomass(:,i,1) = biomass(:,i,2)
+      enddo
+   enddo
 
    !!! CODE
    print*,"CODE START"
@@ -127,7 +129,7 @@ program simulate
    do n = 1,NumTrials
       ! Print
       if (mod(n,floor(NumTrials/100.0)) == 0 .OR. n == 1) then
-         print*, floor((real(n)/real(NumTrials)*100.0))
+         print*, m
          write (filename,"(A5,I0.3,A4)") "data/", m, ".csv"
          filename = trim(filename)
          call write_all(filename)
@@ -176,6 +178,13 @@ program simulate
       timer(7) = (finish_update - start_update) + timer(7)
 
       curr_time = curr_time + dt
+
+      ! REFILL
+      !if (abs(curr_time - 2*60) < 3*dt) then
+      !   c_s(:,:) = c_bulk
+      !   c_q(:,:) = 0.0
+      !   eps_amount(:,:) = 0.0
+      !endif
    end do
 
    call cpu_time(finish)
@@ -198,17 +207,6 @@ program simulate
    print*,"Dow"   ,i
    call get_count_particles(biomass(:,1,1),eps_count(1,1),i)
    print*,"Par"   ,i
-
-
-   ! Write to file
-   !filename = "data/conc_count2.dat"
-   !call write_count(filename)
-   !filename = "data/conc_cq2.dat"
-   !call write_concentration(c_q, filename)
-   !filename = "data/conc_cs4.dat"
-   !call write_concentration(c_s, filename)
-   !print*, "Finished writing to *.dat files"
-
 
 end program simulate
 
@@ -350,6 +348,7 @@ subroutine update_division(i)
    real :: randf, r
    real :: newmass
    integer :: n, j, count, newup
+   logical, save :: division = .FALSE.
 
    do j = 1,Nmax
       if (biomass(j,i,1) > Mmax) then
@@ -357,13 +356,12 @@ subroutine update_division(i)
          randf = 0.4 + 0.2*randf ! 0.4-0.6
 
          ! Mass
+         call mass2cell_count(biomass(j,i,1), count)
          newmass = randf * biomass(j,i,1)
-         biomass(j,i,1) = (1-randf) * biomass(j,i,1)
-
+         biomass(j,i,1) = biomass(j,i,1) - newmass
 
          ! Up cells hypergeometric distribution
          newup = 0
-         call mass2cell_count(biomass(j,i,1), count)
          do n=1,up(j,i,1)
             call random_number(r)
             if ( r < real(up(j,i,1)) / real(count)) then
@@ -372,10 +370,13 @@ subroutine update_division(i)
             endif
             count = count - 1
          enddo
-         ! ...
 
          ! call biomass_append(....)
          call biomass_append(i, newmass, newup, biomass, up)
+         if (division .EQV. .FALSE.) then
+            print*, "First division"
+            division = .TRUE.
+         endif
       endif
    enddo
 end
@@ -393,7 +394,7 @@ subroutine update_pressure(i, biomass, eps_count, pressure)
    call get_count_particles(biomass(:,i,1), eps_count(i,1), count)
 
    if (count >= pmax) then
-      pressure(i,2) = real(pmax)
+      pressure(i,2) = (count-pmax+2)*real(pmax)
    else
       pressure(i,2) = real(count) / (real(pmax) - real(count))
    end if
@@ -414,6 +415,8 @@ subroutine update_displacement(i, pressure, biomass, eps_count, up)
    real :: mass,tot_pressure, rand, P(6) ! Cumulative probability
    logical :: eps_displaced
    integer :: pos(3),pos2(3)
+   logical, save :: first = .FALSE.
+
 
 
    call get_count_particles(biomass(:,i,1), eps_count(i,1), count)
@@ -475,6 +478,10 @@ subroutine update_displacement(i, pressure, biomass, eps_count, up)
       ! Calculate which neighbour(index) and particle is chosen
       ! neighbour
       do while (count_displaced > 0)
+         if (first .EQV. .FALSE.) then
+            print*, "First displacement"
+            first = .TRUE.
+         endif
          call random_number(rand)
          do j =1,6
             if ( rand < P(j) ) then
@@ -732,7 +739,7 @@ subroutine update_concentration_q(biomass, up, diff, c)
       do i = 1,v_count
          call get_count_up(i,count_up)
          call get_count_down(i,count_down)
-         if (Kq == 0) then
+         if (Kq == 0.0) then
             prod(i) = Zqd*count_down + Zqu*count_up
          else
             prod(i) = Zqd*count_down + Zqu*count_up * c(i,1+s)/(Kq + c(i,1+s) )
@@ -796,7 +803,6 @@ subroutine biomass_append(i, mass,up_temp,biomass,up)
    use input !Nmax
    implicit none
 
-
    integer, intent(in) :: i
    real, intent(in) :: mass
    real, intent(out) :: biomass(Nmax,v_count,2)
@@ -811,7 +817,7 @@ subroutine biomass_append(i, mass,up_temp,biomass,up)
          exit
       endif
 
-      !if (j == Nmax) print*, "Couldn't append!", biomass(:,i,2)
+      !if (j == Nmax) print*, "Couldn't append! index:", i
    enddo
 
 end
