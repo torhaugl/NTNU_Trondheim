@@ -10,3 +10,5 @@ do
    cut -d, -f10 $i | sed -E 's/([+-]?[0-9.]+)[eE]\+?(-?)([0-9]+)/(\1*10^\2\3)/g' | paste -sd+ | bc  >> sum.csv
 done
 sort -n sum.csv >> sum_proc.csv
+rm sum.csv
+mv sum_proc.csv sum.csv
