@@ -13,7 +13,9 @@ After running run.sh, you can run fortran/data/sum.sh to get a processed
 data-file out, sum_proc.csv.
 
 Plotting is easily done in gnuplot with the following code snippets,
+
 set datafile separator ","
+
 plot "sum_proc.csv" using 1:n with lines,
 
 where n is an integer determining what you want to plot.
