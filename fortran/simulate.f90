@@ -55,8 +55,6 @@ end
 !     which variables are available, and reduces arguments
 !     passed into subroutines. Also is a speed-up.
 !
-!  TODO
-!     Implement use variable in more subroutines
 module variable
    use input
    implicit none
@@ -77,7 +75,7 @@ end
 !     in the data/ folder.
 program simulate
    use input      ! v_count, Nmax, diff_s, diff_q, v_size(3)
-   use Variable   ! all variables
+   use variable   ! all variables
    implicit none
 
    ! Functions
@@ -124,8 +122,6 @@ program simulate
 
    call cpu_time(start)
 
-! TODO Updates independent of neighbours (all except concentration)
-!      can be calculated outside voxel loop
    do n = 1,NumTrials
       ! Print
       if (mod(n,floor(NumTrials/100.0)) == 0 .OR. n == 1) then
@@ -179,7 +175,7 @@ program simulate
 
       curr_time = curr_time + dt
 
-      ! REFILL
+      ! REFILL ROUTINE
       !if (abs(curr_time - 2*60) < 3*dt) then
       !   c_s(:,:) = c_bulk
       !   c_q(:,:) = 0.0
@@ -268,6 +264,7 @@ end
 !     filename    A new file to write to
 !
 subroutine write_count(filename)
+   ! Total count plot
    use input
    use variable
    implicit none
@@ -292,6 +289,7 @@ subroutine write_count(filename)
 end
 
 subroutine write_cellcount(biomass, filename)
+   ! Cellcount plot
    use input
    implicit none
 
@@ -313,7 +311,7 @@ subroutine write_cellcount(biomass, filename)
 end
 
 subroutine write_concentration(c, filename)
-   ! Easy scatter
+   ! Easy scatter plot
    use input
    implicit none
    real, intent(in) :: c(v_count, 2)
@@ -341,6 +339,7 @@ subroutine write_concentration(c, filename)
 end
 
 subroutine update_division(i)
+   ! Split cells with mass > max mass
    use input
    use variable !biomass
    implicit none
@@ -402,7 +401,7 @@ subroutine update_pressure(i, biomass, eps_count, pressure)
 end
 
 subroutine update_displacement(i, pressure, biomass, eps_count, up)
-   ! Depends on neighbours
+   ! Calculates which particles displace to neighbouring voxels
    use input
    implicit none
 
@@ -544,6 +543,7 @@ subroutine update_eps(i, biomass, up, eps_amount, eps_count)
 end
 
 subroutine update_mass(i)
+   ! Update mass according to excess substrate
    use input !v_count Nmax Ymax, Ks, Vmax, m, dt
    use variable !c_s, biomass
    implicit none
@@ -553,7 +553,7 @@ subroutine update_mass(i)
 end
 
 subroutine get_count_up(i,count_up)
-   ! TODO Worth it?
+   ! Get count of up-regulated particles
    use input
    use variable
    implicit none
@@ -571,7 +571,7 @@ subroutine get_count_up(i,count_up)
 end
 
 subroutine get_count_down(i,count_down)
-   ! TODO Worth it?
+   ! Get count of down-regulated particles
    use input
    use variable
    implicit none
@@ -589,8 +589,7 @@ subroutine get_count_down(i,count_down)
 end
 
 subroutine get_count_particles(biomass_particle,eps_count_particle, count)
-   ! TODO Worth it?
-   ! Particle count in voxel!
+   ! Particle count in voxel
    ! Nonzero entries in biomass_particle are a particle
    use input
    implicit none
@@ -604,7 +603,7 @@ subroutine get_count_particles(biomass_particle,eps_count_particle, count)
 end
 
 subroutine get_count_nonzero(arr, n)
-   ! Counts
+   ! Counts nonzero elements
    use input !Nmax
    implicit none
 
@@ -616,7 +615,7 @@ subroutine get_count_nonzero(arr, n)
 end
 
 subroutine update_stochastics(i)
-   !TODO error due to up(j,i,1), j is not correct
+   ! Update which cells go from down to up regulated and opposite.
    use input !v_count, dt
    use variable !c_q, biomass, up
    implicit none
@@ -656,7 +655,7 @@ subroutine update_stochastics(i)
 end
 
 subroutine probability_down2up(i, prob)
-   ! Calculates probability down to up
+   ! Calculates probability down-regulated to up-regulated
    use input !v_count, alpha, gamma
    use variable !c_q
    implicit none
@@ -667,7 +666,7 @@ subroutine probability_down2up(i, prob)
 end
 
 subroutine probability_up2down(i, prob)
-   ! Calculates probability down to up
+   ! Calculates probability up-regulated to down-regulated
    use input !v_count, beta, gamma
    use variable
    implicit none
@@ -731,7 +730,6 @@ subroutine update_concentration_q(biomass, up, diff, c)
    real,    dimension(v_count) :: prod
    integer :: j_list_neigh(6), i, j, k, s
    integer :: count_up, count_down
-   !TODO Move count function before s-loop
 
    do s = 1, S_q ! Substeps
       c(:,2+s) = c(:,1+s)
@@ -763,6 +761,7 @@ subroutine update_concentration_q(biomass, up, diff, c)
 end
 
 subroutine biomass_remove_random(i, biomass, mass, up, up_temp)
+   ! Remove a random particle from voxel i
    use input
    implicit none
 
@@ -798,7 +797,6 @@ subroutine biomass_remove_random(i, biomass, mass, up, up_temp)
 end
 
 subroutine biomass_append(i, mass,up_temp,biomass,up)
-   ! TODO check total particle count
    ! Append mass at first non-zero biomass
    use input !Nmax
    implicit none

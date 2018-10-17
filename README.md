@@ -30,4 +30,3 @@ where n is an integer determining what you want to plot.
 
 6) #EPS particles
 
-7) EPS concentration (ignore this)
